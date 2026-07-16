@@ -28,5 +28,8 @@ mummer -mum -l $k -b -n -c REF.fa QRY.fa > REF_QRY.out
 
 #### Run chr_aln
 ```bash
-chr_aln REF.fa QRY.fa REF_QRY.out $NTHREADS $CHECK_INVERSIONS REF_QRY.chain.out > REF_QRY.out
+chr_aln REF.fa QRY.fa REF_QRY.out $NTHREADS $CHECK_INVERSIONS REF_QRY.chain.out [$CHECK_QRY_RC] > REF_QRY.out
 ```
+Where `$NTHREADS` is the number of threads, `$CHECK_INVERSIONS` can take on either the value `1` or `0` (to enable or disable checking for inverted regions).
+
+If `$CHECK_QRY_RC` is set to `1`, then an initial check is done if a better alignment can be found to the reverse-complement of `QRY.fa`.
