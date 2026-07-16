@@ -20,13 +20,13 @@ where `$NTHREADS` can be set as an environment variable, or replaced in this com
 
 Other available modes include `RelDebInfo` (release mode with debugging info), `Debug`, and `Profile`.
 
-### Running chr_aln
+### Running `chr_aln`
 #### Compute maximal unique matches (MUMs) with MUMMer4
 ```bash
 mummer -mum -l $k -b -n -c REF.fa QRY.fa > REF_QRY.out
 ```
 
-#### Run chr_aln
+#### Run `chr_aln`
 ```bash
 chr_aln REF.fa QRY.fa REF_QRY.out $NTHREADS $CHECK_INVERSIONS REF_QRY.chain.out [$CHECK_QRY_RC] [$ACCURATE_MODE] > REF_QRY.out
 ```
