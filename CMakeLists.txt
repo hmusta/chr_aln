@@ -87,11 +87,11 @@ target_link_libraries(libchraln PRIVATE
 
 if(PROFILING)
     target_include_directories(libchraln SYSTEM PUBLIC
-        /ccb/sw/hmusta/.bak/miniconda3/pkgs/gperftools-2.7-h767d802_2/include
+        gperftools/include
     )
     target_link_libraries(libchraln PRIVATE
-        /ccb/sw/hmusta/.bak/miniconda3/pkgs/gperftools-2.7-h767d802_2/lib/libprofiler.a
-        /ccb/sw/hmusta/.bak/miniconda3/pkgs/libunwind-1.8.3-h65a8314_0/lib/libunwind.so
+        gperftools/lib/libprofiler.a
+        libunwind/lib/libunwind.so
     )
 endif()
 
