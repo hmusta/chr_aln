@@ -1,0 +1,12 @@
+[submodule "cpp_progress_bar"]
+	path = cpp_progress_bar
+	url = https://github.com/karasikov/cpp_progress_bar
+[submodule "WFA2-lib"]
+	path = WFA2-lib
+	url = https://github.com/hmusta/WFA2-lib
+[submodule "unialigner"]
+	path = unialigner
+	url = https://github.com/hmusta/unialigner
+[submodule "mummer"]
+	path = mummer
+	url = https://github.com/mummer4/mummer
