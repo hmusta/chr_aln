@@ -31,7 +31,7 @@
 
 int main(int argc, char** argv) {
     if (argc <= 6) {
-        std::cerr << "Usage: chr_aln REF.fa QRY.fa MUMMER.out NTHREADS CHECK_INVERSIONS CHAIN_OUT.out [CHAIN_QRY_RC]"
+        std::cerr << "Usage: chr_aln REF.fa QRY.fa MUMMER.out NTHREADS CHECK_INVERSIONS CHAIN_OUT.out [CHAIN_QRY_RC] [ACCURATE_MODE]"
                   << std::endl;
         return 1;
     }
@@ -84,8 +84,9 @@ int main(int argc, char** argv) {
     SOffset heuristics_length_cutoff = long_seq_length_cutoff;
     // SOffset heuristics_length_cutoff = std::numeric_limits<SOffset>::max();
 
-    auto check_if_heuristics = [&heuristics_length_cutoff](SOffset qlen, SOffset tlen) -> bool {
-        return qlen + tlen > heuristics_length_cutoff;
+    auto check_if_heuristics = [&force_less_heuristics,
+                                &heuristics_length_cutoff](SOffset qlen, SOffset tlen) -> bool {
+        return !force_less_heuristics && (qlen + tlen > heuristics_length_cutoff);
     };
 
     if (max_dist < std::numeric_limits<SOffset>::max()) {
@@ -116,6 +117,11 @@ int main(int argc, char** argv) {
     bool check_rc = false;
     if (argc > 6) {
         check_rc = std::atoi(argv[6]);
+    }
+
+    bool force_less_heuristics = false;
+    if (argc > 7) {
+        force_less_heuristics = std::atoi(argv[7]);
     }
 
     assert(argc > 6);
