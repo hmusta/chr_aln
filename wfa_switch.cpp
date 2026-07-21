@@ -257,10 +257,10 @@ struct Breakpoints {
 
 inline std::ostream& operator<<(std::ostream& out, const Breakpoints &bp) {
     out << bp.min_p << "\t"
-        << bp.t1 << " " << bp.t1_left_gap << "," << bp.t1_right_gap << "\t"
-        << bp.q1 << " " << bp.q1_left_gap << "," << bp.q1_right_gap << "\t"
-        << bp.t2 << " " << bp.t2_left_gap << "," << bp.t2_right_gap << "\t"
-        << bp.q2 << " " << bp.q2_left_gap << "," << bp.q2_right_gap << "\n";
+        << "t1: " << bp.t1 << " " << bp.t1_left_gap << "," << bp.t1_right_gap << "\t"
+        << "q1: " << bp.q1 << " " << bp.q1_left_gap << "," << bp.q1_right_gap << "\t"
+        << "t2: " << bp.t2 << " " << bp.t2_left_gap << "," << bp.t2_right_gap << "\t"
+        << "q2: " << bp.q2 << " " << bp.q2_left_gap << "," << bp.q2_right_gap << "\n";
     return out;
 }
 
@@ -323,80 +323,73 @@ void update_breakpoints(wfa::WFAligner& aligner,
         assert(q1 + q1p + q1_left_gap + q1_right_gap  == q1_max);
         assert(q2 + q2p + q2_left_gap + q2_right_gap  == q2_max);
 
-        if (update_p < breakpoints.min_p) {
-            Breakpoints bp_new;
-            bp_new.t1 = t1;
-            bp_new.q1 = q1;
-            bp_new.q2 = q2;
-            bp_new.t2 = t2;
-            bp_new.t1_left_gap = t1_left_gap;
-            bp_new.t1_right_gap = t1_right_gap;
-            bp_new.t2_left_gap = t2_left_gap;
-            bp_new.t2_right_gap = t2_right_gap;
-            bp_new.q1_left_gap = q1_left_gap;
-            bp_new.q1_right_gap = q1_right_gap;
-            bp_new.q2_left_gap = q2_left_gap;
-            bp_new.q2_right_gap = q2_right_gap;
-            Penalty cur_p;
-            if constexpr (!inv_open && !inv_ext && is_fwd) {
-                cur_p = wfa_it_1_fwd_in.get_p();
-            } else if constexpr (inv_open && inv_ext && !is_fwd) {
-                cur_p = wfa_it_1_bwd_in.get_p();
-            } else if constexpr (!inv_open && inv_ext && is_fwd) {
-                cur_p = wfa_it_2_fwd_in.get_p();
+        if (update_p >= breakpoints.min_p)
+            return;
+
+        Breakpoints bp_new;
+        bp_new.t1 = t1;
+        bp_new.q1 = q1;
+        bp_new.q2 = q2;
+        bp_new.t2 = t2;
+        bp_new.t1_left_gap = t1_left_gap;
+        bp_new.t1_right_gap = t1_right_gap;
+        bp_new.t2_left_gap = t2_left_gap;
+        bp_new.t2_right_gap = t2_right_gap;
+        bp_new.q1_left_gap = q1_left_gap;
+        bp_new.q1_right_gap = q1_right_gap;
+        bp_new.q2_left_gap = q2_left_gap;
+        bp_new.q2_right_gap = q2_right_gap;
+
+        if (bp_new.all_on_right(t1_max, q1_max, t2_max, t2_max)) {
+            // t1 will align to nothing, t2 will align to the concatenation of query_2 and query_rc_2
+            if (t2_max == 0) {
+                // penalty already covers query_rc_2, now we need to cover query_2
+                update_p += score_model.get_gap_penalty(q1_max)
+                            + score_model.inv_ext_p * q1_max;
             } else {
-                cur_p = wfa_it_2_bwd_in.get_p();
+                auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_right(
+                    aligner,
+                    score_model,
+                    wfa_it_2_fwd_in.get_target(),
+                    wfa_it_2_fwd_in.get_query(),
+                    wfa_it_2_bwd_in.get_query(),
+                    false,
+                    heuristics_length_cutoff,
+                    false
+                );
+                update_p = newp;
             }
 
-            if (bp_new.all_on_right(t1_max, q1_max, t2_max, t2_max)) {
-                // t1 will align to nothing, t2 will align to the concatenation of query_2 and query_rc_2
-                if (t2_max == 0) {
-                    // penalty already covers query_rc_2, now we need to cover query_2
-                    update_p += score_model.get_gap_penalty(q1_max)
-                                + score_model.inv_ext_p * q1_max;
-                } else {
-                    auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_right(
-                        aligner,
-                        score_model,
-                        wfa_it_2_fwd_in.get_target(),
-                        wfa_it_2_fwd_in.get_query(),
-                        wfa_it_2_bwd_in.get_query(),
-                        false,
-                        heuristics_length_cutoff,
-                        false
-                    );
-                    update_p = newp;
-                }
-
-                if (update_p >= breakpoints.min_p)
-                    return;
-            } else if (bp_new.all_on_left(t1_max, q1_max, t2_max, t2_max)) {
-                // t1 will align to the concatenation of query_1 and query_rc_1, t2 will align to nothing
-                if (t1_max == 0) {
-                    // penalty already covers query_1, now we need to cover query_rc_1
-                    update_p += score_model.get_gap_penalty(q2_max)
-                                + score_model.inv_ext_p * q2_max;
-                } else {
-                    auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_left(
-                        aligner,
-                        score_model,
-                        wfa_it_1_fwd_in.get_target(),
-                        wfa_it_1_fwd_in.get_query(),
-                        wfa_it_1_bwd_in.get_query(),
-                        false,
-                        heuristics_length_cutoff,
-                        false
-                    );
-                    update_p = newp;
-                }
-
-                if (update_p >= breakpoints.min_p)
-                    return;
+            if (update_p >= breakpoints.min_p)
+                return;
+        } else if (bp_new.all_on_left(t1_max, q1_max, t2_max, t2_max)) {
+            // t1 will align to the concatenation of query_1 and query_rc_1, t2 will align to nothing
+            if (t1_max == 0) {
+                // penalty already covers query_1, now we need to cover query_rc_1
+                update_p += score_model.get_gap_penalty(q2_max)
+                            + score_model.inv_ext_p * q2_max;
+            } else {
+                auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_left(
+                    aligner,
+                    score_model,
+                    wfa_it_1_fwd_in.get_target(),
+                    wfa_it_1_fwd_in.get_query(),
+                    wfa_it_1_bwd_in.get_query(),
+                    false,
+                    heuristics_length_cutoff,
+                    false
+                );
+                update_p = newp;
             }
 
-            bp_new.min_p = update_p;
-            breakpoints = bp_new;
+            if (update_p >= breakpoints.min_p)
+                return;
         }
+
+        bp_new.min_p = update_p;
+        breakpoints = bp_new;
+
+        std::cerr << "FOO\t" << breakpoints << "\n";
     };
 
     auto &wfa_it_1_fwd = [&]() -> auto& {
@@ -1067,8 +1060,8 @@ run_alignment(wfa::WFAligner& aligner,
         .q2 = query_rc_1.size() + 1
     };
 
-    const bool use_heuristics = (min_wavefront_length < max_diag_width)
-                                || (max_distance_threshold < max_offset);
+    const bool use_heuristics = ((min_wavefront_length < max_diag_width)
+                                || (max_distance_threshold < max_offset)) && false;
 
     WFAIterator<false, false, true> wfa_it_1_fwd(
         score_model,
@@ -1108,10 +1101,10 @@ run_alignment(wfa::WFAligner& aligner,
 
     update_breakpoints<false, false, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, 0, 0, 0, false, heuristics_length_cutoff);
 
-    bool exhausted_1_fwd = false;
-    bool exhausted_1_bwd = false;
-    bool exhausted_2_fwd = false;
-    bool exhausted_2_bwd = false;
+    bool exhausted_1_fwd = target_1.empty() || query_1.empty();
+    bool exhausted_1_bwd = target_1.empty() || query_rc_1.empty();
+    bool exhausted_2_fwd = target_2.empty() || query_2.empty();
+    bool exhausted_2_bwd = target_2.empty() || query_rc_2.empty();
 
     while (!exhausted_1_fwd || !exhausted_1_bwd || !exhausted_2_fwd || !exhausted_2_bwd) {
         if (!exhausted_1_fwd) {
