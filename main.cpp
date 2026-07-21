@@ -84,11 +84,6 @@ int main(int argc, char** argv) {
     SOffset heuristics_length_cutoff = long_seq_length_cutoff;
     // SOffset heuristics_length_cutoff = std::numeric_limits<SOffset>::max();
 
-    auto check_if_heuristics = [&force_less_heuristics,
-                                &heuristics_length_cutoff](SOffset qlen, SOffset tlen) -> bool {
-        return !force_less_heuristics && (qlen + tlen > heuristics_length_cutoff);
-    };
-
     if (max_dist < std::numeric_limits<SOffset>::max()) {
         max_diag_diff = std::numeric_limits<UDiag>::max();
     }
@@ -123,6 +118,11 @@ int main(int argc, char** argv) {
     if (argc > 7) {
         force_less_heuristics = std::atoi(argv[7]);
     }
+
+    auto check_if_heuristics = [&force_less_heuristics,
+                                &heuristics_length_cutoff](SOffset qlen, SOffset tlen) -> bool {
+        return !force_less_heuristics && (qlen + tlen > heuristics_length_cutoff);
+    };
 
     assert(argc > 6);
     std::string chain_out(argv[6]);
