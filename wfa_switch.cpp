@@ -332,8 +332,8 @@ void update_breakpoints(wfa::WFAligner& aligner,
         assert(q1 + q1p + q1_left_gap + q1_right_gap  == q1_max);
         assert(q2 + q2p + q2_left_gap + q2_right_gap  == q2_max);
 
-        if (update_p >= breakpoints.min_p)
-            return;
+        // if (update_p >= breakpoints.min_p)
+        //     return;
 
         Breakpoints bp_new;
         bp_new.t1 = t1;
@@ -396,6 +396,15 @@ void update_breakpoints(wfa::WFAligner& aligner,
         }
 
         bp_new.min_p = update_p;
+
+        std::cerr << check_frp << "\t" << is_fwd << "," << is_open << "\t"
+                  << (update_p < breakpoints.min_p ? "FOO\t" : "BAR\t") << breakpoints.min_p << "\t"
+                  << bp_new << "\t"
+                  << "lens: " << t1_max << " " << q1_max << " " << t2_max << " " << q2_max
+                  << "\n";
+
+        if (update_p >= breakpoints.min_p)
+            return;
 
         breakpoints = bp_new;
     };
