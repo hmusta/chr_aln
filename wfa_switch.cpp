@@ -47,7 +47,7 @@ struct Breakpoints {
         return query_rc_2.substr(query_rc_2.size() - q2);
     }
 
-    static std::tuple<Score, std::string, Offset, Offset>
+    static std::pair<Score, std::string>
     align_segment(wfa::WFAligner& aligner,
                   const ScoreModel &score_model,
                   std::string_view query,
@@ -96,7 +96,7 @@ struct Breakpoints {
             score = score_cigar(cigar, view_pair, score_model, !penalty_to_score);
         }
 
-        return std::make_tuple(score, std::move(cigar), target.size(), query.size());
+        return std::make_pair(score, std::move(cigar));
     }
 
     bool all_on_right(Offset t1_max, Offset q1_max, Offset t2_max, Offset q2_max) const {
@@ -116,7 +116,7 @@ struct Breakpoints {
         if (!t2_left_gap && !t2_right_gap && !q1_right_gap && !q2_right_gap) {
             std::string query_2_cat(query_2);
             query_2_cat += query_rc_2;
-            auto [p, cigar, r_consumed, q_consumed] = align_segment(
+            auto [p, cigar] = align_segment(
                 aligner, score_model, query_2_cat, target_2,
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -125,11 +125,13 @@ struct Breakpoints {
             return std::make_tuple(
                 p + (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * query_2.size(),
                 std::move(cigar),
-                r_consumed,
-                q_consumed
+                target_2.size(),
+                query_2_cat.size()
             );
         } else {
-            auto [p2f, cigar2f, rcons2f, qcons2f] = align_segment(
+            Offset rcons2f = get_t2_fw(target_2).size();
+            Offset qcons2f = get_q2_fw(query_2).size();
+            auto [p2f, cigar2f] = align_segment(
                 aligner, score_model, get_q2_fw(query_2), get_t2_fw(target_2),
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -155,7 +157,9 @@ struct Breakpoints {
             }
             p2f += (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * get_q2_fw(query_2).size();
 
-            auto [p2b, cigar2b, rcons2b, qcons2b] = align_segment(
+            Offset rcons2b = get_t2_bw(target_2).size();
+            Offset qcons2b = get_q2_bw(query_rc_2).size();
+            auto [p2b, cigar2b] = align_segment(
                 aligner, score_model, get_q2_bw(query_rc_2), get_t2_bw(target_2),
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -195,7 +199,7 @@ struct Breakpoints {
             std::string query_1_cat(query_1);
             query_1_cat += query_rc_1;
 
-            auto [p, cigar, r_consumed, q_consumed] = align_segment(
+            auto [p, cigar] = align_segment(
                 aligner, score_model, query_1_cat, target_1,
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -204,11 +208,13 @@ struct Breakpoints {
             return std::make_tuple(
                 p + (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * query_rc_1.size(),
                 std::move(cigar),
-                r_consumed,
-                q_consumed
+                target_1.size(),
+                query_1_cat.size()
             );
         } else {
-            auto [p1f, cigar1f, rcons1f, qcons1f] = align_segment(
+            Offset rcons1f = get_t1_fw(target_1).size();
+            Offset qcons1f = get_q1_fw(query_1).size();
+            auto [p1f, cigar1f] = align_segment(
                 aligner, score_model, get_q1_fw(query_1), get_t1_fw(target_1),
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -232,7 +238,9 @@ struct Breakpoints {
 
                 qcons1f += q1_left_gap + q2_left_gap;
             }
-            auto [p1b, cigar1b, rcons1b, qcons1b] = align_segment(
+            Offset rcons1b = get_t1_bw(target_1).size();
+            Offset qcons1b = get_q1_bw(query_rc_1).size();
+            auto [p1b, cigar1b] = align_segment(
                 aligner, score_model, get_q1_bw(query_rc_1), get_t1_bw(target_1),
                 penalty_to_score,
                 heuristics_length_cutoff
@@ -260,7 +268,7 @@ inline std::ostream& operator<<(std::ostream& out, const Breakpoints &bp) {
         << "t1: " << bp.t1 << " " << bp.t1_left_gap << "," << bp.t1_right_gap << "\t"
         << "q1: " << bp.q1 << " " << bp.q1_left_gap << "," << bp.q1_right_gap << "\t"
         << "t2: " << bp.t2 << " " << bp.t2_left_gap << "," << bp.t2_right_gap << "\t"
-        << "q2: " << bp.q2 << " " << bp.q2_left_gap << "," << bp.q2_right_gap << "\n";
+        << "q2: " << bp.q2 << " " << bp.q2_left_gap << "," << bp.q2_right_gap;
     return out;
 }
 
@@ -276,7 +284,8 @@ void update_breakpoints(wfa::WFAligner& aligner,
                         Offset t,
                         Offset ext,
                         bool exhausted,
-                        SOffset heuristics_length_cutoff) {
+                        SOffset heuristics_length_cutoff,
+                        bool check_frp) {
     assert(wfa_it_1_fwd_in.max_q() == wfa_it_2_fwd_in.max_q());
     assert(wfa_it_1_bwd_in.max_q() == wfa_it_2_bwd_in.max_q());
     assert(wfa_it_1_fwd_in.max_t() == wfa_it_1_bwd_in.max_t());
@@ -288,7 +297,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
     const SOffset t2_max = wfa_it_2_fwd_in.max_t();
 
     auto update = [&aligner,&breakpoints,&score_model,q1_max,q2_max,t1_max,t2_max,
-                   q,t,ext,
+                   q,t,ext,check_frp,
                    &wfa_it_1_fwd_in,&wfa_it_1_bwd_in,
                    &wfa_it_2_fwd_in,&wfa_it_2_bwd_in,&exhausted,
                    &heuristics_length_cutoff](SOffset q1, SOffset q1p, SOffset q2, SOffset q2p,
@@ -323,8 +332,8 @@ void update_breakpoints(wfa::WFAligner& aligner,
         assert(q1 + q1p + q1_left_gap + q1_right_gap  == q1_max);
         assert(q2 + q2p + q2_left_gap + q2_right_gap  == q2_max);
 
-        if (update_p >= breakpoints.min_p)
-            return;
+        // if (update_p >= breakpoints.min_p)
+        //     return;
 
         Breakpoints bp_new;
         bp_new.t1 = t1;
@@ -387,9 +396,17 @@ void update_breakpoints(wfa::WFAligner& aligner,
         }
 
         bp_new.min_p = update_p;
-        breakpoints = bp_new;
 
-        std::cerr << "FOO\t" << breakpoints << "\n";
+        std::cerr << check_frp << "\t" << is_fwd << "," << is_open << "\t"
+                  << (update_p < breakpoints.min_p ? "FOO\t" : "BAR\t") << breakpoints.min_p << "\t"
+                  << bp_new << "\t"
+                  << "lens: " << t1_max << " " << q1_max << " " << t2_max << " " << q2_max
+                  << "\n";
+
+        if (update_p >= breakpoints.min_p)
+            return;
+
+        breakpoints = bp_new;
     };
 
     auto &wfa_it_1_fwd = [&]() -> auto& {
@@ -533,101 +550,103 @@ void update_breakpoints(wfa::WFAligner& aligner,
     //     return;
     // }
 
-    auto [q1, t1, p1, ext_1f] = wfa_it_1_fwd_in.get_frp();
-    auto [q2p, t1p, p1p, ext_1b] = wfa_it_1_bwd_in.get_frp();
-    auto [q1p, t2, p2, ext_2f] = wfa_it_2_fwd_in.get_frp();
-    auto [q2, t2p, p2p, ext_2b] = wfa_it_2_bwd_in.get_frp();
+    if (check_frp) {
+        auto [q1, t1, p1, ext_1f] = wfa_it_1_fwd_in.get_frp();
+        auto [q2p, t1p, p1p, ext_1b] = wfa_it_1_bwd_in.get_frp();
+        auto [q1p, t2, p2, ext_2f] = wfa_it_2_fwd_in.get_frp();
+        auto [q2, t2p, p2p, ext_2b] = wfa_it_2_bwd_in.get_frp();
 
-    SOffset q1_gap = q1_max - q1 - q1p;
-    SOffset q2_gap = q2_max - q2 - q2p;
-    SOffset t1_gap = t1_max - t1 - t1p;
-    SOffset t2_gap = t2_max - t2 - t2p;
+        SOffset q1_gap = q1_max - q1 - q1p;
+        SOffset q2_gap = q2_max - q2 - q2p;
+        SOffset t1_gap = t1_max - t1 - t1p;
+        SOffset t2_gap = t2_max - t2 - t2p;
 
-    Penalty cur_p;
-    if constexpr (!inv_open && !inv_ext && is_fwd) {
-        cur_p = wfa_it_1_fwd_in.get_p();
-    } else if constexpr (inv_open && inv_ext && !is_fwd) {
-        cur_p = wfa_it_1_bwd_in.get_p();
-    } else if constexpr (!inv_open && inv_ext && is_fwd) {
-        cur_p = wfa_it_2_fwd_in.get_p();
-    } else {
-        cur_p = wfa_it_2_bwd_in.get_p();
-    }
+        // Penalty cur_p;
+        // if constexpr (!inv_open && !inv_ext && is_fwd) {
+        //     cur_p = wfa_it_1_fwd_in.get_p();
+        // } else if constexpr (inv_open && inv_ext && !is_fwd) {
+        //     cur_p = wfa_it_1_bwd_in.get_p();
+        // } else if constexpr (!inv_open && inv_ext && is_fwd) {
+        //     cur_p = wfa_it_2_fwd_in.get_p();
+        // } else {
+        //     cur_p = wfa_it_2_bwd_in.get_p();
+        // }
 
-    if (q1_gap > 0 || q2_gap > 0 || t1_gap > 0 || t2_gap > 0) {
-        SOffset ext_q_1 = ext_1f + ext_2f;
-        SOffset ext_q_2 = ext_1b + ext_2b;
-        SOffset ext_t_1 = ext_1f + ext_1b;
-        SOffset ext_t_2 = ext_2f + ext_2b;
+        if (q1_gap > 0 || q2_gap > 0 || t1_gap > 0 || t2_gap > 0) {
+            SOffset ext_q_1 = ext_1f + ext_2f;
+            SOffset ext_q_2 = ext_1b + ext_2b;
+            SOffset ext_t_1 = ext_1f + ext_1b;
+            SOffset ext_t_2 = ext_2f + ext_2b;
 
-        if (-q1_gap <= ext_q_1 && -q2_gap <= ext_q_2 && -t1_gap <= ext_t_1 && -t2_gap <= ext_t_2) {
-            assert(q1 + q1p + q1_gap == q1_max);
-            assert(q2 + q2p + q2_gap == q2_max);
-            assert(t1 + t1p + t1_gap == t1_max);
-            assert(t2 + t2p + t2_gap == t2_max);
-
-            if (q1_gap < 0) {
-                q1p += q1_gap;
-                t1p += q1_gap;
-                t1_gap -= q1_gap;
-
-                q1_gap = 0;
-
-                if (t1p < 0 || t1_gap < 0 || q1p < 0 || q2_gap < 0)
-                    return;
-
-                assert(q1p >= 0);
-                assert(q1 + q1p == q1_max);
+            if (-q1_gap <= ext_q_1 && -q2_gap <= ext_q_2 && -t1_gap <= ext_t_1 && -t2_gap <= ext_t_2) {
+                assert(q1 + q1p + q1_gap == q1_max);
+                assert(q2 + q2p + q2_gap == q2_max);
                 assert(t1 + t1p + t1_gap == t1_max);
-            }
+                assert(t2 + t2p + t2_gap == t2_max);
 
-            if (q2_gap < 0) {
-                q2p += q2_gap;
-                t2 += q2_gap;
-                t2_gap -= q2_gap;
+                if (q1_gap < 0) {
+                    q1p += q1_gap;
+                    t1p += q1_gap;
+                    t1_gap -= q1_gap;
 
-                q2_gap = 0;
+                    q1_gap = 0;
 
-                if (t2 < 0 || t2_gap < 0 || q2p < 0 || q1_gap < 0)
+                    if (t1p < 0 || t1_gap < 0 || q1p < 0 || q2_gap < 0)
+                        return;
+
+                    assert(q1p >= 0);
+                    assert(q1 + q1p == q1_max);
+                    assert(t1 + t1p + t1_gap == t1_max);
+                }
+
+                if (q2_gap < 0) {
+                    q2p += q2_gap;
+                    t2 += q2_gap;
+                    t2_gap -= q2_gap;
+
+                    q2_gap = 0;
+
+                    if (t2 < 0 || t2_gap < 0 || q2p < 0 || q1_gap < 0)
+                        return;
+
+                    assert(q2 + q2p == q2_max);
+                    assert(t2 + t2p + t2_gap == t2_max);
+                }
+
+                if (t1_gap < 0 || t2_gap < 0)
                     return;
 
-                assert(q2 + q2p == q2_max);
-                assert(t2 + t2p + t2_gap == t2_max);
+                assert(q1_gap >= 0);
+                assert(q2_gap >= 0);
+
+                Penalty p = p1 + p1p + p2 + p2p
+                                + score_model.get_gap_penalty(q1_gap)
+                                + score_model.get_gap_penalty(q2_gap)
+                                + score_model.get_gap_penalty(t1_gap)
+                                + score_model.get_gap_penalty(t2_gap);
+
+                SOffset t1_left_gap = t1_gap;
+                SOffset t1_right_gap = 0;
+                SOffset t2_left_gap = 0;
+                SOffset t2_right_gap = t2_gap;
+                SOffset q1_left_gap = q1_gap;
+                SOffset q1_right_gap = 0;
+                SOffset q2_left_gap = 0;
+                SOffset q2_right_gap = q2_gap;
+
+                update(q1, q1p,
+                    q2, q2p,
+                    t1, t1p,
+                    t2, t2p,
+                    p,
+                    q1_left_gap, q1_right_gap,
+                    q2_left_gap, q2_right_gap,
+                    t1_left_gap, t1_right_gap,
+                    t2_left_gap, t2_right_gap);
             }
 
-            if (t1_gap < 0 || t2_gap < 0)
-                return;
-
-            assert(q1_gap >= 0);
-            assert(q2_gap >= 0);
-
-            Penalty p = p1 + p1p + p2 + p2p
-                            + score_model.get_gap_penalty(q1_gap)
-                            + score_model.get_gap_penalty(q2_gap)
-                            + score_model.get_gap_penalty(t1_gap)
-                            + score_model.get_gap_penalty(t2_gap);
-
-            SOffset t1_left_gap = t1_gap;
-            SOffset t1_right_gap = 0;
-            SOffset t2_left_gap = 0;
-            SOffset t2_right_gap = t2_gap;
-            SOffset q1_left_gap = q1_gap;
-            SOffset q1_right_gap = 0;
-            SOffset q2_left_gap = 0;
-            SOffset q2_right_gap = q2_gap;
-
-            update(q1, q1p,
-                   q2, q2p,
-                   t1, t1p,
-                   t2, t2p,
-                   p,
-                   q1_left_gap, q1_right_gap,
-                   q2_left_gap, q2_right_gap,
-                   t1_left_gap, t1_right_gap,
-                   t2_left_gap, t2_right_gap);
+            return;
         }
-
-        return;
     }
 
     // we have t1 and q1 (and diag_1_f)
@@ -850,7 +869,7 @@ get_alignment_cigars(wfa::WFAligner& aligner,
     auto align_segment = [&aligner,&score_model,&heuristics_length_cutoff](std::string_view query,
                                                  std::string_view target,
                                                  Diag min_k = min_diag,
-                                                 Diag max_k = max_diag) -> std::tuple<Score, std::string, Offset, Offset> {
+                                                 Diag max_k = max_diag) -> std::pair<Score, std::string> {
         return Breakpoints::align_segment(
             aligner, score_model,
             query, target,
@@ -928,7 +947,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
         inv_length_1 = query_rc_1.size();
         inv_length_r_1 = target_1.size() - cigar_get_target_pos(cigar_1, query_1.size());
     } else {
-        std::tie(score_1_fw, cigar_1, r_consumed_1, q_consumed_1) = align_segment(
+        r_consumed_1 = breakpoints.get_t1_fw(target_1).size();
+        q_consumed_1 = breakpoints.get_q1_fw(query_1).size();
+        std::tie(score_1_fw, cigar_1) = align_segment(
             breakpoints.get_q1_fw(query_1),
             breakpoints.get_t1_fw(target_1)
             // wfa_it_1_fwd.get_min_diag(),
@@ -947,7 +968,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_1 += breakpoints.q1_left_gap;
         }
 
-        std::tie(score_1_bw, cigar_1_bw, r_consumed_1_bw, q_consumed_1_bw) = align_segment(
+        r_consumed_1_bw = breakpoints.get_t1_bw(target_1).size();
+        q_consumed_1_bw = breakpoints.get_q1_bw(query_rc_1).size();
+        std::tie(score_1_bw, cigar_1_bw) = align_segment(
             breakpoints.get_q1_bw(query_rc_1),
             breakpoints.get_t1_bw(target_1)
         );
@@ -969,7 +992,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_1_bw += breakpoints.q2_left_gap;
         }
 
-        std::tie(score_2_fw, cigar_2, r_consumed_2, q_consumed_2) = align_segment(
+        r_consumed_2 = breakpoints.get_t2_fw(target_2).size();
+        q_consumed_2 = breakpoints.get_q2_fw(query_2).size();
+        std::tie(score_2_fw, cigar_2) = align_segment(
             breakpoints.get_q2_fw(query_2),
             breakpoints.get_t2_fw(target_2)
             // wfa_it_2_fwd.get_min_diag(),
@@ -993,7 +1018,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_2 += breakpoints.q1_right_gap;
         }
 
-        std::tie(score_2_bw, cigar_2_bw, r_consumed_2_bw, q_consumed_2_bw) = align_segment(
+        r_consumed_2_bw = breakpoints.get_t2_bw(target_2).size();
+        q_consumed_2_bw = breakpoints.get_q2_bw(query_rc_2).size();
+        std::tie(score_2_bw, cigar_2_bw) = align_segment(
             breakpoints.get_q2_bw(query_rc_2),
             breakpoints.get_t2_bw(target_2)
         );
@@ -1060,8 +1087,8 @@ run_alignment(wfa::WFAligner& aligner,
         .q2 = query_rc_1.size() + 1
     };
 
-    const bool use_heuristics = ((min_wavefront_length < max_diag_width)
-                                || (max_distance_threshold < max_offset)) && false;
+    const bool use_heuristics = (min_wavefront_length < max_diag_width)
+                                || (max_distance_threshold < max_offset);
 
     WFAIterator<false, false, true> wfa_it_1_fwd(
         score_model,
@@ -1099,12 +1126,17 @@ run_alignment(wfa::WFAligner& aligner,
     assert(wfa_it_1_bwd.get_p() == wfa_it_2_fwd.get_p());
     assert(wfa_it_2_fwd.get_p() == wfa_it_2_bwd.get_p());
 
-    update_breakpoints<false, false, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, 0, 0, 0, false, heuristics_length_cutoff);
+    update_breakpoints<false, false, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, 0, 0, 0, false, heuristics_length_cutoff, true);
 
     bool exhausted_1_fwd = target_1.empty() || query_1.empty();
     bool exhausted_1_bwd = target_1.empty() || query_rc_1.empty();
     bool exhausted_2_fwd = target_2.empty() || query_2.empty();
     bool exhausted_2_bwd = target_2.empty() || query_rc_2.empty();
+
+    UDiag max_antidiag_1_fwd = wfa_it_1_fwd.get_max_antidiag();
+    UDiag max_antidiag_1_bwd = wfa_it_1_bwd.get_max_antidiag();
+    UDiag max_antidiag_2_fwd = wfa_it_2_fwd.get_max_antidiag();
+    UDiag max_antidiag_2_bwd = wfa_it_2_bwd.get_max_antidiag();
 
     while (!exhausted_1_fwd || !exhausted_1_bwd || !exhausted_2_fwd || !exhausted_2_bwd) {
         if (!exhausted_1_fwd) {
@@ -1122,7 +1154,14 @@ run_alignment(wfa::WFAligner& aligner,
                         exhausted = true;
                     }
                 }
-                update_breakpoints<false, false, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff);
+
+                bool check_frp = false;
+                if (wfa_it_1_fwd.get_max_antidiag() > max_antidiag_1_fwd) {
+                    max_antidiag_1_fwd = wfa_it_1_fwd.get_max_antidiag();
+                    check_frp = true;
+                }
+
+                update_breakpoints<false, false, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff, check_frp);
             }, breakpoints.min_p);
 
             if (wfa_it_1_fwd.get_p() >= breakpoints.min_p)
@@ -1144,7 +1183,14 @@ run_alignment(wfa::WFAligner& aligner,
                         exhausted = true;
                     }
                 }
-                update_breakpoints<false, true, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff);
+
+                bool check_frp = false;
+                if (wfa_it_2_fwd.get_max_antidiag() > max_antidiag_2_fwd) {
+                    max_antidiag_2_fwd = wfa_it_2_fwd.get_max_antidiag();
+                    check_frp = true;
+                }
+
+                update_breakpoints<false, true, true>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff, check_frp);
             }, breakpoints.min_p);
 
             if (wfa_it_2_fwd.get_p() >= breakpoints.min_p)
@@ -1166,7 +1212,14 @@ run_alignment(wfa::WFAligner& aligner,
                         exhausted = true;
                     }
                 }
-                update_breakpoints<true, true, false>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff);
+
+                bool check_frp = false;
+                if (wfa_it_1_bwd.get_max_antidiag() > max_antidiag_1_bwd) {
+                    max_antidiag_1_bwd = wfa_it_1_bwd.get_max_antidiag();
+                    check_frp = true;
+                }
+
+                update_breakpoints<true, true, false>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff, check_frp);
             }, breakpoints.min_p);
 
             if (wfa_it_1_bwd.get_p() >= breakpoints.min_p)
@@ -1188,7 +1241,14 @@ run_alignment(wfa::WFAligner& aligner,
                         exhausted = true;
                     }
                 }
-                update_breakpoints<false, false, false>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff);
+
+                bool check_frp = false;
+                if (wfa_it_2_bwd.get_max_antidiag() > max_antidiag_2_bwd) {
+                    max_antidiag_2_bwd = wfa_it_2_bwd.get_max_antidiag();
+                    check_frp = true;
+                }
+
+                update_breakpoints<false, false, false>(aligner, score_model, breakpoints, wfa_it_1_fwd, wfa_it_1_bwd, wfa_it_2_fwd, wfa_it_2_bwd, q, t, ext, exhausted, heuristics_length_cutoff, check_frp);
             }, breakpoints.min_p);
 
             if (wfa_it_2_bwd.get_p() >= breakpoints.min_p)
