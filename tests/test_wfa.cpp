@@ -1,12 +1,37 @@
 #include <gtest/gtest.h>
 
 #include "helpers.hpp"
+#include "chaining.hpp"
+#include "repeat_aligner.hpp"
+#include "wfa_switch.hpp"
 
 #include <string>
 #include <string_view>
 
-#include "chaining.hpp"
-#include "wfa_switch.hpp"
+TEST(WFATest, CheckAlignment) {
+    std::string target = "ACGTAC";
+    std::string query  = "ACGTACGTAC";
+    SeqPair view_pair(query, target);
+
+    ASSERT_GT(query.size(), target.size());
+    std::string cigar_truth = std::to_string(target.size()) + EQ_OP
+                                + std::to_string(query.size() - target.size()) + QUERY_CONSUME_OP;
+
+    ScoreModel score_model(1, -9, -16, -2, -41, -1, -41, 0);
+    auto aligner = make_aligner(score_model);
+
+    aligner.alignEnd2End(query, target);
+    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner.getAlignmentStatus());
+    EXPECT_EQ(cigar_truth, aligner.getCIGAR(true));
+
+    aligner.alignEnd2End(match_char, &view_pair, query.size(), target.size());
+    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner.getAlignmentStatus());
+    EXPECT_EQ(cigar_truth, aligner.getCIGAR(true));
+
+    auto [score, cigar] = get_alignment(aligner, score_model, query, target);
+    EXPECT_EQ(cigar_truth, cigar);
+    EXPECT_EQ(score, score_cigar(cigar, view_pair, score_model));
+}
 
 TEST(WFATest, ZeroLength) {
     std::string target;
@@ -142,14 +167,14 @@ TEST(WFATest, EmptyAltQueriesEq) {
                         query_2, query_rc_2, target_2);
 
     EXPECT_EQ(score_model.match_s * target_1.size(), score_1);
-    EXPECT_EQ(std::to_string(target_1.size()) + "=", cigar_1);
+    EXPECT_EQ(std::to_string(target_1.size()) + EQ_OP, cigar_1);
     EXPECT_EQ(target_1.size(), r_consumed_1);
     EXPECT_EQ(query_1.size(), q_consumed_1);
     EXPECT_EQ(0, inv_length_1);
     EXPECT_EQ(0, inv_length_r_1);
 
     EXPECT_EQ(score_model.get_gap_score(target_2.size()), score_2);
-    EXPECT_EQ(std::to_string(target_2.size()) + "I", cigar_2);
+    EXPECT_EQ(std::to_string(target_2.size()) + TARGET_CONSUME_OP, cigar_2);
     EXPECT_EQ(target_2.size(), r_consumed_2);
     EXPECT_EQ(0, q_consumed_2);
     EXPECT_EQ(0, inv_length_2);
@@ -175,14 +200,14 @@ TEST(WFATest, EmptyAltQueriesNeq) {
                         query_2, query_rc_2, target_2);
 
     EXPECT_EQ(score_model.match_s * target_1.size(), score_1);
-    EXPECT_EQ(std::to_string(target_1.size()) + "=", cigar_1);
+    EXPECT_EQ(std::to_string(target_1.size()) + EQ_OP, cigar_1);
     EXPECT_EQ(target_1.size(), r_consumed_1);
     EXPECT_EQ(query_1.size(), q_consumed_1);
     EXPECT_EQ(0, inv_length_1);
     EXPECT_EQ(0, inv_length_r_1);
 
     EXPECT_EQ(score_model.get_gap_score(target_2.size()), score_2);
-    EXPECT_EQ(std::to_string(target_2.size()) + "I", cigar_2);
+    EXPECT_EQ(std::to_string(target_2.size()) + TARGET_CONSUME_OP, cigar_2);
     EXPECT_EQ(target_2.size(), r_consumed_2);
     EXPECT_EQ(0, q_consumed_2);
     EXPECT_EQ(0, inv_length_2);
@@ -208,14 +233,14 @@ TEST(WFATest, EmptyQueries) {
                         query_2, query_rc_2, target_2);
 
     EXPECT_EQ(score_model.get_gap_score(target_1.size()) + score_model.inv_open_s, score_1);
-    EXPECT_EQ(std::to_string(target_1.size()) + "I", cigar_1);
+    EXPECT_EQ(std::to_string(target_1.size()) + TARGET_CONSUME_OP, cigar_1);
     EXPECT_EQ(target_1.size(), r_consumed_1);
     EXPECT_EQ(0, q_consumed_1);
     EXPECT_EQ(0, inv_length_1);
     EXPECT_EQ(0, inv_length_r_1);
 
     EXPECT_EQ(score_model.get_gap_score(target_2.size()), score_2);
-    EXPECT_EQ(std::to_string(target_2.size()) + "I", cigar_2);
+    EXPECT_EQ(std::to_string(target_2.size()) + TARGET_CONSUME_OP, cigar_2);
     EXPECT_EQ(target_2.size(), r_consumed_2);
     EXPECT_EQ(0, q_consumed_2);
     EXPECT_EQ(0, inv_length_2);
@@ -241,7 +266,7 @@ TEST(WFATest, BothRight) {
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
-    EXPECT_EQ("3I", cigar_1);
+    EXPECT_EQ("3D", cigar_1);
     EXPECT_EQ("8=", cigar_2);
 }
 
@@ -301,7 +326,7 @@ TEST(WFATest, BothRightFull) {
                         query_w_1, query_rc_w_1, target_w_1,
                         query_w_2, query_rc_w_2, target_w_2);
 
-    EXPECT_EQ("3I", cigar_1);
+    EXPECT_EQ("3D", cigar_1);
     EXPECT_EQ("8=", cigar_2);
 }
 

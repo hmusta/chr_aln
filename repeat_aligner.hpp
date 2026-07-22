@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include <bindings/cpp/WFAligner.hpp>
+
 std::string repeat_aligner(const std::string &query, const std::string &target);
 
 void call_mums(std::string_view query,
@@ -19,3 +21,13 @@ void call_mums(std::string_view query,
                SOffset qrcend = -1,
                SOffset tbegin = 0,
                SOffset tend = -1);
+
+std::pair<Score, std::string>
+get_alignment(wfa::WFAligner& aligner,
+                const ScoreModel &score_model,
+                std::string_view query,
+                std::string_view target,
+                bool penalty_to_score = true,
+                SOffset heuristics_length_cutoff = max_offset,
+                Diag min_k = min_diag,
+                Diag max_k = max_diag);

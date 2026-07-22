@@ -5,14 +5,70 @@
 #include <mummer/sparseSA.hpp>
 #include <tandem_aligner.hpp>
 
+std::pair<Score, std::string>
+get_alignment(wfa::WFAligner& aligner,
+                const ScoreModel &score_model,
+                std::string_view query,
+                std::string_view target,
+                bool penalty_to_score,
+                SOffset heuristics_length_cutoff,
+                Diag min_k,
+                Diag max_k) {
+    SeqPair view_pair(query, target);
+    Score n_penalty = INT32_MIN;
+    std::string cigar;
+    if (query.size() && target.size()) {
+        if (static_cast<SOffset>(query.size() + target.size()) >= heuristics_length_cutoff) {
+            cigar = repeat_aligner(std::string(query), std::string(target));
+        } else {
+            if (min_k == min_diag && max_k == max_diag) {
+                aligner.setHeuristicNone();
+            } else {
+                aligner.setHeuristicBandedStatic(-max_k - 1, -min_k + 1);
+            }
+            aligner.alignEnd2End(match_char, &view_pair, query.size(), target.size());
+            if (aligner.getAlignmentStatus() != wfa::WFAligner::StatusAlgCompleted) {
+                assert(min_k != min_diag || max_k != max_diag);
+                std::cerr << "WARNING: rerunning alignment without heuristics\n";
+                aligner.setHeuristicNone();
+                aligner.alignEnd2End(match_char, &view_pair, query.size(),
+                                    target.size());
+            }
+            assert(aligner.getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
+            n_penalty = aligner.getAlignmentScore();
+            std::string base_cigar = aligner.getCIGAR(true);
+            cigar = cigar_fix_n(base_cigar, target, query);
+        }
+    } else if (query.size()) {
+        cigar = std::to_string(query.size()) + "I";
+    } else if (target.size()) {
+        cigar = std::to_string(target.size()) + "D";
+    } else {
+        n_penalty = 0;
+    }
+
+    assert((query.empty() && target.empty()) || cigar.size());
+    assert(check_cigar_seq_lengths(cigar, target.size(), query.size()));
+    Score score;
+    if (n_penalty != INT32_MIN) {
+        score = penalty_to_score
+            ? score_model.penalty_to_score(-n_penalty, query.size(), target.size())
+            : -n_penalty;
+    } else {
+        score = score_cigar(cigar, view_pair, score_model, !penalty_to_score);
+    }
+
+    return std::make_pair(score, std::move(cigar));
+}
+
 std::string repeat_aligner(const std::string &query,
                            const std::string &target) {
     tandem_aligner::Cigar ta_cigar;
     std::queue<tandem_aligner::MinSeqTask> queue;
     queue.push({
         ta_cigar.begin(),
-        0, (int64_t) query.size(),
-        0, (int64_t) target.size()
+        0, (int64_t) target.size(),
+        0, (int64_t) query.size()
     });
     int max_freq = 50;
     logging::Logger logger;
@@ -24,17 +80,17 @@ std::string repeat_aligner(const std::string &query,
         false);
     while (queue.size()) {
         ta.RunTask(queue, ta_cigar,
-                   query,
                    target,
+                   query,
                    false, false);
         queue.pop();
     }
-    ta_cigar.AssertValidity(query, target);
+    ta_cigar.AssertValidity(target, query);
 
     ta.AssignMismatches(
         ta_cigar,
-        query,
-        target
+        target,
+        query
     );
 
     std::ostringstream sout;

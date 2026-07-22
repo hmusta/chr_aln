@@ -11,6 +11,12 @@
 #include <cctype>
 #include <cstdint>
 
+static constexpr char EQ_OP = '=';
+static constexpr char NEQ_OP = 'X';
+static constexpr char MATCH_OP = 'M';
+static constexpr char TARGET_CONSUME_OP = 'D';
+static constexpr char QUERY_CONSUME_OP = 'I';
+
 inline void cigar_caller(const std::string& cigar,
                   const std::function<void(char, int64_t)>& callback,
                   const std::function<bool()>& terminate = []() { return false; }) {
@@ -40,9 +46,9 @@ inline std::pair<int64_t, int64_t> count_identities_and_matches(const std::strin
     int64_t matches = 0;
     cigar_caller(cigar, [&](char c, int64_t num) {
         switch (c) {
-            case '=': identities += num; [[fallthrough]];
-            case 'X':
-            case 'M': { matches += num; } break;
+            case EQ_OP: identities += num; [[fallthrough]];
+            case NEQ_OP:
+            case MATCH_OP: { matches += num; } break;
         }
     });
 
@@ -56,19 +62,19 @@ inline bool check_cigar_seq_lengths(const std::string& cigar,
     SOffset q_consumed_test = 0;
     cigar_caller(cigar, [&](char c, int64_t num) {
         switch (c) {
-            case 'X':
-            case 'M':
-            case '=': {
+            case NEQ_OP:
+            case MATCH_OP:
+            case EQ_OP: {
                 assert(r_consumed_test + num <= r_consumed);
                 assert(q_consumed_test + num <= q_consumed);
                 r_consumed_test += num;
                 q_consumed_test += num;
             } break;
-            case 'D': {
+            case QUERY_CONSUME_OP: {
                 assert(q_consumed_test + num <= q_consumed);
                 q_consumed_test += num;
             } break;
-            case 'I': {
+            case TARGET_CONSUME_OP: {
                 assert(r_consumed_test + num <= r_consumed);
                 r_consumed_test += num;
             } break;
@@ -96,7 +102,7 @@ inline Score score_cigar(const std::string& cigar,
     Score score = 0;
     cigar_caller(cigar, [&](char c, int64_t num) {
         switch (c) {
-            case 'M': {
+            case MATCH_OP: {
                 if (!penalty)
                     score += score_model.match_s * num;
                 assert(it_q + num <= query.end());
@@ -105,7 +111,7 @@ inline Score score_cigar(const std::string& cigar,
                 it_q += num;
                 it_r += num;
             } break;
-            case '=': {
+            case EQ_OP: {
                 if (!penalty)
                     score += score_model.match_s * num;
                 assert(it_q + num <= query.end());
@@ -114,7 +120,7 @@ inline Score score_cigar(const std::string& cigar,
                 it_q += num;
                 it_r += num;
             } break;
-            case 'X': {
+            case NEQ_OP: {
                 score += (!penalty ? score_model.mismatch_s : score_model.mismatch_p) * num;
                 assert(it_q + num <= query.end());
                 assert(it_r + num <= target.end());
@@ -126,12 +132,12 @@ inline Score score_cigar(const std::string& cigar,
                 }
                 #endif
             } break;
-            case 'I': {
+            case TARGET_CONSUME_OP: {
                 score += !penalty ? score_model.get_gap_score(num) : score_model.get_gap_penalty(num);
                 it_r += num;
                 assert(it_r <= target.end());
             } break;
-            case 'D': {
+            case QUERY_CONSUME_OP: {
                 score += !penalty ? score_model.get_gap_score(num) : score_model.get_gap_penalty(num);
                 it_q += num;
                 assert(it_q <= query.end());
@@ -155,11 +161,11 @@ inline size_t cigar_edits(const std::string& cigar) {
     size_t edits = 0;
     cigar_caller(cigar, [&](char c, int64_t num) {
         switch (c) {
-            case 'M':
-            case '=': break;
-            case 'X':
-            case 'I':
-            case 'D': { edits += num; } break;
+            case MATCH_OP:
+            case EQ_OP: break;
+            case NEQ_OP:
+            case TARGET_CONSUME_OP:
+            case QUERY_CONSUME_OP: { edits += num; } break;
             default: {
                 std::cerr << "\n\nInvalid character in CIGAR\n"
                             << cigar << "\n\n"
@@ -178,18 +184,18 @@ inline size_t cigar_get_target_pos(const std::string& cigar, size_t final_query_
     cigar_caller(cigar, [&](char c, int64_t num) {
         assert(query_pos <= final_query_pos);
         switch (c) {
-            case '=':
-            case 'M':
-            case 'X': {
+            case EQ_OP:
+            case MATCH_OP:
+            case NEQ_OP: {
                 size_t next_query_pos = std::min<size_t>(final_query_pos, query_pos + num);
                 num = next_query_pos - query_pos;
                 query_pos = next_query_pos;
                 target_pos += num;
             } break;
-            case 'D': {
+            case QUERY_CONSUME_OP: {
                 query_pos = std::min<size_t>(final_query_pos, query_pos + num);
             } break;
-            case 'I': { target_pos += num; } break;
+            case TARGET_CONSUME_OP: { target_pos += num; } break;
             default: {
                 std::cerr << "\n\nInvalid character in CIGAR\n"
                             << cigar << "\n\n"
@@ -208,16 +214,16 @@ inline size_t cigar_get_query_pos(const std::string& cigar, size_t final_target_
     cigar_caller(cigar, [&](char c, int64_t num) {
         assert(target_pos <= final_target_pos);
         switch (c) {
-            case '=':
-            case 'M':
-            case 'X': {
+            case EQ_OP:
+            case MATCH_OP:
+            case NEQ_OP: {
                 size_t next_target_pos = std::min<size_t>(final_target_pos, target_pos + num);
                 num = next_target_pos - target_pos;
                 target_pos = next_target_pos;
                 query_pos += num;
             } break;
-            case 'D': { query_pos += num; } break;
-            case 'I': {
+            case QUERY_CONSUME_OP: { query_pos += num; } break;
+            case TARGET_CONSUME_OP: {
                 target_pos = std::min<size_t>(final_target_pos, target_pos + num);
             } break;
             default: {
@@ -240,7 +246,7 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
     Offset q_consumed = 0;
 
     auto push_op = [&](char c, int64_t num) {
-        assert(c == 'M' || c == 'X' || c == '=');
+        assert(c == MATCH_OP || c == NEQ_OP || c == EQ_OP);
         cigar += std::to_string(num) + c;
     };
 
@@ -248,9 +254,9 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
     char last_op = 'S';
     cigar_caller(cigar_in, [&](char op, int64_t num) {
         switch (op) {
-            case 'M':
-            case '=':
-            case 'X': {
+            case MATCH_OP:
+            case EQ_OP:
+            case NEQ_OP: {
                 assert(r_consumed + num <= target.size());
                 assert(q_consumed + num <= query.size());
                 std::string_view target_w = target.substr(r_consumed, num);
@@ -258,9 +264,9 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
                 for (size_t i = 0; i < target_w.size(); ++i) {
                     char op;
                     if (target_w[i] != 'N' && query_w[i] != 'N') {
-                        op = (target_w[i] == query_w[i]) ? '=' : 'X';
+                        op = (target_w[i] == query_w[i]) ? EQ_OP : NEQ_OP;
                     } else {
-                        op = 'M';
+                        op = MATCH_OP;
                     }
                     if (op == last_op) {
                         ++snum;
@@ -275,27 +281,27 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
                 r_consumed += num;
                 q_consumed += num;
             } break;
-            case 'I': {
+            case TARGET_CONSUME_OP: {
                 if (snum > 0) {
                     push_op(last_op, snum);
                     snum = 0;
                     last_op = 'S';
                 }
                 assert(r_consumed + num <= target.size());
-                cigar += std::to_string(num) + 'I';
+                cigar += std::to_string(num) + TARGET_CONSUME_OP;
                 r_consumed += num;
-                last_op = 'I';
+                last_op = TARGET_CONSUME_OP;
             } break;
-            case 'D': {
+            case QUERY_CONSUME_OP: {
                 if (snum > 0) {
                     push_op(last_op, snum);
                     snum = 0;
                     last_op = 'S';
                 }
                 assert(q_consumed + num <= query.size());
-                cigar += std::to_string(num) + 'D';
+                cigar += std::to_string(num) + QUERY_CONSUME_OP;
                 q_consumed += num;
-                last_op = 'D';
+                last_op = QUERY_CONSUME_OP;
             } break;
         }
     });

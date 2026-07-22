@@ -271,21 +271,21 @@ int main(int argc, char** argv) {
             SOffset nmismatch = 0;
             char last_op = 'S';
             for (size_t i = 0; i < query_w.size(); ++i) {
-                char cur_op = '=';
+                char cur_op = EQ_OP;
                 if (query_w[i] == 'N' || target_w[i] == 'N') {
-                    cur_op = 'M';
+                    cur_op = MATCH_OP;
                 } else if (query_w[i] != target_w[i]) {
-                    cur_op = 'X';
+                    cur_op = NEQ_OP;
                 }
                 if (cur_op != last_op) {
                     if (num) {
                         assert(last_op != 'S');
-                        nmismatch += last_op == 'X' ? num : 0;
+                        nmismatch += last_op == NEQ_OP ? num : 0;
                         if (nmismatch >= larger_gap_cutoff) {
                             num = 0;
                             break;
                         }
-                        local_score += (last_op == 'X' ? score_model.mismatch_s : score_model.match_s) * num;
+                        local_score += (last_op == NEQ_OP ? score_model.mismatch_s : score_model.match_s) * num;
                         local_cigar += std::to_string(num) + last_op;
                         num = 0;
                     }
@@ -295,8 +295,8 @@ int main(int argc, char** argv) {
             }
             if (num) {
                 assert(last_op != 'S');
-                nmismatch += last_op == 'X' ? num : 0;
-                local_score += (last_op == 'X' ? score_model.mismatch_s : score_model.match_s) * num;
+                nmismatch += last_op == NEQ_OP ? num : 0;
+                local_score += (last_op == NEQ_OP ? score_model.mismatch_s : score_model.match_s) * num;
                 local_cigar += std::to_string(num) + last_op;
             }
             if (nmismatch >= larger_gap_cutoff) {
@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
 
             if (exact_match_length) {
                 local_score += exact_match_length * score_model.match_s;
-                local_cigar += std::to_string(exact_match_length) + "=";
+                local_cigar += std::to_string(exact_match_length) + EQ_OP;
 
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * exact_match_length;
@@ -367,7 +367,7 @@ int main(int argc, char** argv) {
             assert(local_cigar.empty());
             if (skipped) {
                 local_cigar += std::to_string(skipped);
-                local_cigar += "M";
+                local_cigar += MATCH_OP;
             }
 
             Score front_eq = std::mismatch(query_w.begin(), query_w.end(), target_w.begin(), target_w.end()).first - query_w.begin();
@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
                 target_w.remove_prefix(front_eq);
                 qi += front_eq;
                 ti += front_eq;
-                local_cigar += std::to_string(front_eq) + "=";
+                local_cigar += std::to_string(front_eq) + EQ_OP;
             }
 
             size_t back_skipped = 0;
@@ -420,19 +420,17 @@ int main(int argc, char** argv) {
             };
 
             if (target_w.empty()) {
-                // 'D'
                 assert(query_w.size());
                 local_score += score_model.get_gap_score(query_w.size());
-                local_cigar += std::to_string(query_w.size()) + "D";
+                local_cigar += std::to_string(query_w.size()) + QUERY_CONSUME_OP;
                 gap_length = query_w.size();
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * static_cast<Score>(query_w.size());
                 }
             } else if (query_w.empty()) {
-                // 'I'
                 assert(target_w.size());
                 local_score += score_model.get_gap_score(target_w.size());
-                local_cigar += std::to_string(target_w.size()) + "I";
+                local_cigar += std::to_string(target_w.size()) + TARGET_CONSUME_OP;
                 gap_length = target_w.size();
             } else {
                 use_heuristics = check_if_heuristics(query_w.size(), target_w.size());
@@ -497,7 +495,7 @@ int main(int argc, char** argv) {
                           << std::endl;
                 if (back_skipped) {
                     local_cigar += std::to_string(back_skipped);
-                    local_cigar += "M";
+                    local_cigar += MATCH_OP;
                 }
             }
 
@@ -526,7 +524,7 @@ int main(int argc, char** argv) {
             if (exact_match_length) {
                 local_score += exact_match_length * score_model.match_s;
                 local_cigar += std::to_string(exact_match_length);
-                local_cigar += "=";
+                local_cigar += EQ_OP;
 
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * exact_match_length;
@@ -670,10 +668,10 @@ int main(int argc, char** argv) {
             inv_length_r_1 += eml_1;
 
             if (eml_1)
-                cigar_1 += std::to_string(eml_1) + "=";
+                cigar_1 += std::to_string(eml_1) + EQ_OP;
 
             if (eml_2)
-                cigar_2 += std::to_string(eml_2) + "=";
+                cigar_2 += std::to_string(eml_2) + EQ_OP;
 
             if (to_print)
                 print();
@@ -810,7 +808,7 @@ int main(int argc, char** argv) {
     auto push_op = [&](char last_op, int64_t op_len) {
         assert(op_len > 0);
         switch (last_op) {
-            case '=': {
+            case EQ_OP: {
                 assert(r_pos + op_len <= target.size());
                 assert(q_pos + op_len <= query.size());
                 neq += op_len;
@@ -825,7 +823,7 @@ int main(int argc, char** argv) {
                 r_pos += op_len;
                 q_pos += op_len;
             } break;
-            case 'X': {
+            case NEQ_OP: {
                 nmatch += op_len;
                 assert(r_pos + op_len <= target.size());
                 assert(q_pos + op_len <= query.size());
@@ -840,7 +838,7 @@ int main(int argc, char** argv) {
                 r_pos += op_len;
                 q_pos += op_len;
             } break;
-            case 'M': {
+            case MATCH_OP: {
                 n_ref += op_len;
                 n_qry += op_len;
                 assert(r_pos + op_len <= target.size());
@@ -854,7 +852,7 @@ int main(int argc, char** argv) {
                 r_pos += op_len;
                 q_pos += op_len;
             } break;
-            case 'I': {
+            case TARGET_CONSUME_OP: {
                 assert(r_pos + op_len <= target.size());
                 Offset n = std::count(target.data() + r_pos, target.data() + r_pos + op_len, 'N');
                 n_ref += n;
@@ -864,7 +862,7 @@ int main(int argc, char** argv) {
                 }
                 r_pos += op_len;
             } break;
-            case 'D': {
+            case QUERY_CONSUME_OP: {
                 assert(q_pos + op_len <= query.size());
                 Offset n = std::count(query.data() + q_pos, query.data() + q_pos + op_len, 'N');
                 n_qry += n;
