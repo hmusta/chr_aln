@@ -581,8 +581,6 @@ int main(int argc, char** argv) {
                 target_w_1.size() + target_w_2.size()
             );
 
-            auto aligner_scorer = make_aligner(score_model, heuristics_model, wfa::WFAligner::Score);
-
             bool to_print = true;
 
             auto print = [&]() {
@@ -653,7 +651,7 @@ int main(int argc, char** argv) {
 
             std::tie(score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
                      score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2)
-                = run_alignment(aligner, aligner_scorer, score_model,
+                = run_alignment(aligner, score_model,
                                 query_w_1, query_rc_w_1, target_w_1,
                                 query_w_2, query_rc_w_2, target_w_2,
                                 heuristics_length_cutoff,

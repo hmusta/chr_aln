@@ -375,7 +375,6 @@ class WFAIterator {
 std::tuple<Score, std::string, SOffset, SOffset, SOffset, SOffset,
            Score, std::string, SOffset, SOffset, SOffset, SOffset>
 run_alignment(wfa::WFAligner& aligner,
-              wfa::WFAligner& aligner_scorer,
               const ScoreModel &score_model,
               std::string_view query_1,
               std::string_view query_rc_1,

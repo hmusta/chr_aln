@@ -40,11 +40,10 @@ TEST(WFATest, DualZeroLength) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -102,11 +101,10 @@ TEST(WFATest, SharedMiddle) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_w_1, query_rc_w_1, target_w_1,
                         query_w_2, query_rc_w_2, target_w_2);
 
@@ -136,11 +134,10 @@ TEST(WFATest, EmptyAltQueriesEq) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -170,11 +167,10 @@ TEST(WFATest, EmptyAltQueriesNeq) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -204,11 +200,10 @@ TEST(WFATest, EmptyQueries) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -239,11 +234,10 @@ TEST(WFATest, BothRight) {
     ScoreModel score_model;
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -300,11 +294,10 @@ TEST(WFATest, BothRightFull) {
     ASSERT_EQ(target_2_truth, target_w_2);
 
     auto aligner = make_aligner(score_model);
-    auto aligner_scorer = make_aligner(score_model, wfa::WFAligner::MemoryLow, wfa::WFAligner::Score);
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, aligner_scorer, score_model,
+        = run_alignment(aligner, score_model,
                         query_w_1, query_rc_w_1, target_w_1,
                         query_w_2, query_rc_w_2, target_w_2);
 
