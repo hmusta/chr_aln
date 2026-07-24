@@ -626,9 +626,7 @@ int main(int argc, char** argv) {
             if (to_print)
                 print();
 
-            // TODO: heuristics are broken for Ultralow mode (the default for use_heuristics == false),
-            //       so always use heuristics_model here
-            auto aligner = make_aligner(score_model, heuristics_model);
+            auto aligner = make_aligner(score_model, main_model);
 
             auto &r_consumed_1 = nref[i];
             auto &r_consumed_2 = nref[j];
