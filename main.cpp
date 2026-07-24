@@ -726,6 +726,7 @@ int main(int argc, char** argv) {
         #endif
 
         std::cout << "Inversions:";
+
         for (size_t i = 0; i < inverted.size(); ++i) {
             const auto& r_consumed = nref[i];
             const auto& q_consumed = nquery[i];

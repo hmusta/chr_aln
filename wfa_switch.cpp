@@ -52,7 +52,7 @@ struct Breakpoints {
                         && q2 == q2_max && (t2_max > 0 || q1_max > 0 || q2_max > 0);
     }
 
-    std::tuple<Score, std::string, Offset, Offset>
+    std::pair<Score, std::string>
     align_all_right(wfa::WFAligner& aligner,
                     const ScoreModel &score_model,
                     std::string_view target_2,
@@ -70,15 +70,11 @@ struct Breakpoints {
                 heuristics_length_cutoff
             );
 
-            return std::make_tuple(
+            return std::make_pair(
                 p + (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * query_2.size(),
-                std::move(cigar),
-                target_2.size(),
-                query_2_cat.size()
+                std::move(cigar)
             );
         } else {
-            Offset rcons2f = get_t2_fw(target_2).size();
-            Offset qcons2f = get_q2_fw(query_2).size();
             auto [p2f, cigar2f] = get_alignment(
                 aligner, score_model, get_q2_fw(query_2), get_t2_fw(target_2),
                 penalty_to_score,
@@ -89,7 +85,6 @@ struct Breakpoints {
                 p2f += penalty_to_score
                     ? score_model.get_gap_score(t2_left_gap + t2_right_gap)
                     : score_model.get_gap_penalty(t2_left_gap + t2_right_gap);
-                rcons2f += t2_left_gap + t2_right_gap;
             }
             if (q1_right_gap + q2_right_gap) {
                 cigar2f += std::to_string(q1_right_gap + q2_right_gap) + QUERY_CONSUME_OP;
@@ -100,30 +95,18 @@ struct Breakpoints {
                     p2f += score_model.get_gap_penalty(q1_right_gap + q2_right_gap)
                         + score_model.inv_ext_p * q1_right_gap;
                 }
-
-                qcons2f += q1_right_gap + q2_right_gap;
             }
             p2f += (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * get_q2_fw(query_2).size();
 
-            Offset rcons2b = get_t2_bw(target_2).size();
-            Offset qcons2b = get_q2_bw(query_rc_2).size();
             auto [p2b, cigar2b] = get_alignment(
                 aligner, score_model, get_q2_bw(query_rc_2), get_t2_bw(target_2),
                 penalty_to_score,
                 heuristics_length_cutoff
             );
 
-            Offset r_consumed = rcons2f + rcons2b;
-            assert(r_consumed == target_2.size());
-
-            Offset q_consumed = qcons2f + qcons2b;
-            assert(q_consumed == query_2.size() + query_rc_2.size());
-
-            return std::make_tuple(
+            return std::make_pair(
                 p2f + p2b,
-                std::move(cigar2f + std::move(cigar2b)),
-                r_consumed,
-                q_consumed
+                std::move(cigar2f + std::move(cigar2b))
             );
         }
     }
@@ -134,7 +117,7 @@ struct Breakpoints {
                             && t2 + t2_left_gap == t2_max && (t1_max > 0 || q1_max > 0 || q2_max > 0);
     }
 
-    std::tuple<Score, std::string, Offset, Offset>
+    std::pair<Score, std::string>
     align_all_left(wfa::WFAligner& aligner,
                    const ScoreModel &score_model,
                    std::string_view target_1,
@@ -153,15 +136,11 @@ struct Breakpoints {
                 heuristics_length_cutoff
             );
 
-            return std::make_tuple(
+            return std::make_pair(
                 p + (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * query_rc_1.size(),
-                std::move(cigar),
-                target_1.size(),
-                query_1_cat.size()
+                std::move(cigar)
             );
         } else {
-            Offset rcons1f = get_t1_fw(target_1).size();
-            Offset qcons1f = get_q1_fw(query_1).size();
             auto [p1f, cigar1f] = get_alignment(
                 aligner, score_model, get_q1_fw(query_1), get_t1_fw(target_1),
                 penalty_to_score,
@@ -172,7 +151,6 @@ struct Breakpoints {
                 p1f += penalty_to_score
                     ? score_model.get_gap_score(t1_left_gap + t1_right_gap)
                     : score_model.get_gap_penalty(t1_left_gap + t1_right_gap);
-                rcons1f += t1_left_gap + t1_right_gap;
             }
             if (q1_left_gap + q2_left_gap) {
                 cigar1f += std::to_string(q1_left_gap + q2_left_gap) + QUERY_CONSUME_OP;
@@ -183,11 +161,7 @@ struct Breakpoints {
                     p1f += score_model.get_gap_penalty(q1_left_gap + q2_left_gap)
                         + score_model.inv_ext_p * q2_left_gap;
                 }
-
-                qcons1f += q1_left_gap + q2_left_gap;
             }
-            Offset rcons1b = get_t1_bw(target_1).size();
-            Offset qcons1b = get_q1_bw(query_rc_1).size();
             auto [p1b, cigar1b] = get_alignment(
                 aligner, score_model, get_q1_bw(query_rc_1), get_t1_bw(target_1),
                 penalty_to_score,
@@ -195,17 +169,9 @@ struct Breakpoints {
             );
             p1b += (penalty_to_score ? score_model.inv_ext_s : score_model.inv_ext_p) * get_q1_bw(query_rc_1).size();
 
-            Offset r_consumed = rcons1f + rcons1b;
-            assert(r_consumed == target_1.size());
-
-            Offset q_consumed = qcons1f + qcons1b;
-            assert(q_consumed == query_1.size() + query_rc_1.size());
-
-            return std::make_tuple(
+            return std::make_pair(
                 p1f + p1b,
-                std::move(cigar1f + std::move(cigar1b)),
-                r_consumed,
-                q_consumed
+                std::move(cigar1f + std::move(cigar1b))
             );
         }
     }
@@ -304,7 +270,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
                 update_p += score_model.get_gap_penalty(q1_max)
                             + score_model.inv_ext_p * q1_max;
             } else {
-                auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_right(
+                auto [newp, dummy_cigar] = bp_new.align_all_right(
                     aligner,
                     score_model,
                     wfa_it_2_fwd_in.get_target(),
@@ -326,7 +292,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
                 update_p += score_model.get_gap_penalty(q2_max)
                             + score_model.inv_ext_p * q2_max;
             } else {
-                auto [newp, dummy_cigar, rcons, qcons] = bp_new.align_all_left(
+                auto [newp, dummy_cigar] = bp_new.align_all_left(
                     aligner,
                     score_model,
                     wfa_it_1_fwd_in.get_target(),
@@ -864,7 +830,7 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             score_1_fw = score_model.get_gap_score(target_1.size());
         }
 
-        std::tie(score_2_fw, cigar_2, r_consumed_2, q_consumed_2) = breakpoints.align_all_right(
+        std::tie(score_2_fw, cigar_2) = breakpoints.align_all_right(
             aligner,
             score_model,
             target_2,
@@ -876,13 +842,17 @@ get_alignment_cigars(wfa::WFAligner& aligner,
         );
         inv_length_2 = query_2.size();
         inv_length_r_2 = cigar_get_target_pos(cigar_2, query_2.size());
+        r_consumed_2 = inv_length_r_2;
+        r_consumed_2_bw = target_2.size() - inv_length_r_2;
+        q_consumed_2 = query_2.size();
+        q_consumed_2_bw = query_rc_2.size();
     } else if (breakpoints.all_on_left(target_1.size(), query_1.size(), target_2.size(), query_rc_1.size())) {
         if (target_2.size()) {
             cigar_2 = std::to_string(target_2.size()) + TARGET_CONSUME_OP;
             r_consumed_2 = target_2.size();
             score_2_bw = score_model.get_gap_score(target_2.size());
         }
-        std::tie(score_1_fw, cigar_1, r_consumed_1, q_consumed_1) = breakpoints.align_all_left(
+        std::tie(score_1_fw, cigar_1) = breakpoints.align_all_left(
             aligner,
             score_model,
             target_1,
@@ -894,6 +864,10 @@ get_alignment_cigars(wfa::WFAligner& aligner,
         );
         inv_length_1 = query_rc_1.size();
         inv_length_r_1 = target_1.size() - cigar_get_target_pos(cigar_1, query_1.size());
+        r_consumed_1_bw = inv_length_r_1;
+        r_consumed_1 = target_1.size() - inv_length_r_1;
+        q_consumed_1 = query_1.size();
+        q_consumed_1_bw = query_rc_1.size();
     } else {
         r_consumed_1 = breakpoints.get_t1_fw(target_1).size();
         q_consumed_1 = breakpoints.get_q1_fw(query_1).size();
@@ -989,6 +963,12 @@ get_alignment_cigars(wfa::WFAligner& aligner,
         score_2 += inv_length_2 * score_model.inv_ext_s;
     }
 
+    cigar_1 += std::move(cigar_1_bw);
+    assert(cigar_1 == cigar_fix_n(cigar_1, target_1, std::string(query_1.substr(0, q_consumed_1)) + std::string(query_rc_1.substr(query_rc_1.size() - q_consumed_1_bw))));
+
+    cigar_2 += std::move(cigar_2_bw);
+    assert(cigar_2 == cigar_fix_n(cigar_2, target_2, std::string(query_2.substr(0, q_consumed_2)) + std::string(query_rc_2.substr(query_rc_2.size() - q_consumed_2_bw))));
+
     r_consumed_1 += r_consumed_1_bw;
     q_consumed_1 += q_consumed_1_bw;
 
@@ -997,9 +977,6 @@ get_alignment_cigars(wfa::WFAligner& aligner,
 
     assert(r_consumed_1 + r_consumed_2 == target_1.size() + target_2.size());
     assert(q_consumed_1 + q_consumed_2 == query_1.size() + query_rc_1.size());
-
-    cigar_1 += std::move(cigar_1_bw);
-    cigar_2 += std::move(cigar_2_bw);
 
     score_1 += score_1_fw + score_1_bw;
     score_2 += score_2_fw + score_2_bw;
