@@ -66,8 +66,13 @@ struct Ranges {
         assert_valid();
         rbegin += target_shift;
         rend += target_shift;
-        qbegin += query_shift;
-        qend += query_shift;
+        if (qorientation) {
+            qbegin -= query_shift;
+            qend -= query_shift;
+        } else {
+            qbegin += query_shift;
+            qend += query_shift;
+        }
     }
 
     void trim_prefix(size_t trim, bool allow_empty = true) {
@@ -75,7 +80,11 @@ struct Ranges {
         assert(trim <= size());
         if (trim > 0) {
             rbegin += trim;
-            qbegin += trim;
+            if (qorientation) {
+                qend -= trim;
+            } else {
+                qbegin += trim;
+            }
             assert_valid(allow_empty);
             left_trim += trim;
         }
@@ -86,7 +95,11 @@ struct Ranges {
         assert(trim <= size());
         if (trim > 0) {
             rend -= trim;
-            qend -= trim;
+            if (qorientation) {
+                qbegin += trim;
+            } else {
+                qend -= trim;
+            }
             assert_valid(allow_empty);
             right_trim += trim;
         }

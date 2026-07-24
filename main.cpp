@@ -792,6 +792,7 @@ int main(int argc, char** argv) {
 
     #ifndef NDEBUG
     std::string_view query_check(check_inversions ? query_prc : query);
+    std::string final_cigar;
     #endif
 
     Offset r_pos = 0;
@@ -874,6 +875,10 @@ int main(int argc, char** argv) {
             }
         }
         std::cout << op_len << last_op;
+        #ifndef NDEBUG
+        final_cigar += std::to_string(op_len) + last_op;
+        assert(final_cigar == cigar_fix_n(final_cigar, target.substr(0, r_pos), query_check.substr(0, q_pos)));
+        #endif
     };
 
     char last_op = 'S';

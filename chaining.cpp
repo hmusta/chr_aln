@@ -1077,14 +1077,29 @@ compute_invs(std::string_view target,
             Offset end_suffix_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
 
             if (i != j - 1) {
+                assert(best_chain[i].check_equal(target, query, query_rc));
+
                 best_chain[i].trim_prefix(start_prefix_trim, false);
+                assert(best_chain[i].check_equal(target, query, query_rc));
+
                 best_chain[i].trim_suffix(start_suffix_trim, false);
+                assert(best_chain[i].check_equal(target, query, query_rc));
+
+                assert(best_chain[j - 1].check_equal(target, query, query_rc));
 
                 best_chain[j - 1].trim_prefix(end_prefix_trim, false);
+                assert(best_chain[j - 1].check_equal(target, query, query_rc));
+
                 best_chain[j - 1].trim_suffix(end_suffix_trim, false);
+                assert(best_chain[j - 1].check_equal(target, query, query_rc));
             } else {
+                assert(best_chain[i].check_equal(target, query, query_rc));
+
                 best_chain[i].trim_prefix(std::max(start_prefix_trim, end_prefix_trim), false);
+                assert(best_chain[i].check_equal(target, query, query_rc));
+
                 best_chain[i].trim_suffix(std::max(start_suffix_trim, end_suffix_trim), false);
+                assert(best_chain[i].check_equal(target, query, query_rc));
             }
         }
     }
