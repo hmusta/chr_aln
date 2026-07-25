@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
                     auto aligner
                             = make_aligner(score_model, use_heuristics ? heuristics_model : main_model);
 
-                    auto [cigar, aln_score] = run_alignment_gaps(aligner, query_w, target_w, score_model);
+                    auto [cigar, aln_score] = run_alignment_gaps(*aligner, query_w, target_w, score_model);
                     local_score += aln_score;
                     local_cigar += std::move(cigar);
                 } else if (use_heuristics) {
@@ -458,24 +458,24 @@ int main(int argc, char** argv) {
                 } else {
                     auto aligner = make_aligner(score_model, use_heuristics ? heuristics_model : main_model);
                     if (use_heuristics && max_dist < std::numeric_limits<SOffset>::max()) {
-                        aligner.setHeuristicWFadaptive(min_wavefront_length, std::min<SOffset>(max_dist, query_w.size()), 1);
+                        aligner->setHeuristicWFadaptive(min_wavefront_length, std::min<SOffset>(max_dist, query_w.size()), 1);
                     }
-                    check_lengths(aligner, score_model.max_pen, query_w.size() + target_w.size());
+                    check_lengths(*aligner, score_model.max_pen, query_w.size() + target_w.size());
 
                     SeqPair view_pair(query_w, target_w);
 
-                    aligner.alignEnd2End(match_char, &view_pair, query_w.size(),
+                    aligner->alignEnd2End(match_char, &view_pair, query_w.size(),
                                          target_w.size());
-                    if (aligner.getAlignmentStatus() != wfa::WFAligner::StatusAlgCompleted) {
+                    if (aligner->getAlignmentStatus() != wfa::WFAligner::StatusAlgCompleted) {
                         std::cerr << "WARNING: rerunning alignment without heuristics\n";
-                        aligner.setHeuristicNone();
-                        aligner.alignEnd2End(match_char, &view_pair, query_w.size(),
+                        aligner->setHeuristicNone();
+                        aligner->alignEnd2End(match_char, &view_pair, query_w.size(),
                                          target_w.size());
                     }
-                    assert(aligner.getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
+                    assert(aligner->getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
 
                     Score aln_score = 0;
-                    std::string wfa_cigar = aligner.getCIGAR(true);
+                    std::string wfa_cigar = aligner->getCIGAR(true);
                     std::string cigar = cigar_fix_n(wfa_cigar, target_w, query_w);
                     aln_score = score_cigar(cigar, view_pair, score_model);
 
@@ -647,7 +647,7 @@ int main(int argc, char** argv) {
 
             std::tie(score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
                      score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2)
-                = run_alignment(aligner, score_model,
+                = run_alignment(*aligner, score_model,
                                 query_w_1, query_rc_w_1, target_w_1,
                                 query_w_2, query_rc_w_2, target_w_2,
                                 heuristics_length_cutoff,

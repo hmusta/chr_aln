@@ -5,6 +5,10 @@
 
 #include <cctype>
 
+const std::array<std::string, 4> ScoreModel::model_type_str {
+        "Edit distance", "Gap linear", "Gap affine", "2-piece gap affine"
+    };
+
 std::array<char, 256> generate_rc_map() {
     std::array<char, 256> rc_map;
     std::iota(rc_map.begin(), rc_map.end(), 0);

@@ -20,15 +20,15 @@ TEST(WFATest, CheckAlignment) {
     ScoreModel score_model(1, -9, -16, -2, -41, -1, -41, 0);
     auto aligner = make_aligner(score_model);
 
-    aligner.alignEnd2End(query, target);
-    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner.getAlignmentStatus());
-    EXPECT_EQ(cigar_truth, aligner.getCIGAR(true));
+    aligner->alignEnd2End(query, target);
+    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner->getAlignmentStatus());
+    EXPECT_EQ(cigar_truth, aligner->getCIGAR(true));
 
-    aligner.alignEnd2End(match_char, &view_pair, query.size(), target.size());
-    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner.getAlignmentStatus());
-    EXPECT_EQ(cigar_truth, aligner.getCIGAR(true));
+    aligner->alignEnd2End(match_char, &view_pair, query.size(), target.size());
+    ASSERT_EQ(wfa::WFAligner::StatusAlgCompleted, aligner->getAlignmentStatus());
+    EXPECT_EQ(cigar_truth, aligner->getCIGAR(true));
 
-    auto [score, cigar] = get_alignment(aligner, score_model, query, target);
+    auto [score, cigar] = get_alignment(*aligner, score_model, query, target);
     EXPECT_EQ(cigar_truth, cigar);
     EXPECT_EQ(score, score_cigar(cigar, view_pair, score_model));
 }
@@ -68,7 +68,7 @@ TEST(WFATest, DualZeroLength) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -129,7 +129,7 @@ TEST(WFATest, SharedMiddle) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_w_1, query_rc_w_1, target_w_1,
                         query_w_2, query_rc_w_2, target_w_2);
 
@@ -162,7 +162,7 @@ TEST(WFATest, EmptyAltQueriesEq) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -195,7 +195,7 @@ TEST(WFATest, EmptyAltQueriesNeq) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -228,7 +228,7 @@ TEST(WFATest, EmptyQueries) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -262,7 +262,7 @@ TEST(WFATest, BothRight) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_1, query_rc_1, target_1,
                         query_2, query_rc_2, target_2);
 
@@ -322,7 +322,7 @@ TEST(WFATest, BothRightFull) {
 
     auto [score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
           score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2]
-        = run_alignment(aligner, score_model,
+        = run_alignment(*aligner, score_model,
                         query_w_1, query_rc_w_1, target_w_1,
                         query_w_2, query_rc_w_2, target_w_2);
 

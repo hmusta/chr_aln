@@ -148,6 +148,7 @@ struct ScoreModel {
         GAP_AFFINE,
         GAP_2P_AFFINE
     };
+    static const std::array<std::string, 4> model_type_str;
 
     static constexpr Penalty inf_p = std::numeric_limits<Penalty>::max() / 4;
     static constexpr Score ninf_s = std::numeric_limits<Score>::min() / 4;
@@ -313,6 +314,11 @@ struct ScoreModel {
     ScoreModel(Score m, Score x, Score o, Score e, Score io, Score ie, Score idf = 1)
         : ScoreModel(m, x, o, e, o, e, io, ie, idf) {}
 
+    const std::string& get_model_str() const {
+        assert(model_type < model_type_str.size());
+        return model_type_str[model_type];
+    }
+
     Score penalty_to_score(Score p, SOffset qlen, SOffset rlen) const {
         Score init_penalty = match_s * (qlen + rlen) - p;
         assert(!(init_penalty % 2));
@@ -345,6 +351,7 @@ struct ScoreModel {
 
 inline std::ostream& operator<<(std::ostream& out, const ScoreModel &model) {
     out << "Scores"
+        << "\tModel: " << model.get_model_str()
         << "\tM: " << model.match_s / model.inv_div_factor
         << "\tX: " << model.mismatch_s / model.inv_div_factor
         << "\tO1: " << model.gap_open_s / model.inv_div_factor

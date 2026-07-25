@@ -20,21 +20,21 @@
 
 #include <bindings/cpp/WFAligner.hpp>
 
-// TODO: replace with unique_ptr for generic object
-inline wfa::WFAlignerGapAffine2Pieces
+inline std::unique_ptr<wfa::WFAligner>
 make_aligner(const ScoreModel &score_model,
              wfa::WFAligner::MemoryModel memory_model = wfa::WFAligner::MemoryLow,
              wfa::WFAligner::AlignmentScope scope = wfa::WFAligner::Alignment) {
-    wfa::WFAlignerGapAffine2Pieces ret_val(
+    // TODO: pick child class based on score_model.model_type
+    std::unique_ptr<wfa::WFAligner> aligner = std::make_unique<wfa::WFAlignerGapAffine2Pieces>(
         score_model.mismatch_p,
         score_model.gap_open_p, score_model.gap_ext_p,
         score_model.gap_open2_p, score_model.gap_ext2_p,
         scope, memory_model
     );
 
-    ret_val.setHeuristicNone();
+    aligner->setHeuristicNone();
 
-    return ret_val;
+    return aligner;
 }
 
 inline Penalty get_align_penalty(wfa::WFAligner& aligner_scorer,
