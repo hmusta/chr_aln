@@ -66,13 +66,9 @@ struct Ranges {
         assert_valid();
         rbegin += target_shift;
         rend += target_shift;
-        if (qorientation) {
-            qbegin -= query_shift;
-            qend -= query_shift;
-        } else {
-            qbegin += query_shift;
-            qend += query_shift;
-        }
+        qbegin += query_shift;
+        qend += query_shift;
+        assert_valid();
     }
 
     void trim_prefix(size_t trim, bool allow_empty = true) {

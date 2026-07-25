@@ -253,22 +253,38 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
             assert(query_rc_w_1.empty());
 
             // for reference
-            // best_chain[i].trim_prefix(std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0), false);
-            // best_chain[i].trim_suffix(std::max<SOffset>(best_chain[i].qend - qi_2, 0), false);
-            // best_chain[j - 1].trim_prefix(std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0), false);
-            // best_chain[j - 1].trim_suffix(std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0), false);
+            // // add this to rbegin, subtract this from qend
+            // Offset start_target_trim = std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0);
 
-            Offset start_trim = std::max<SOffset>(t_begin + target_w_1.size() - ranges[i_start].rbegin, 0);
-            Offset end_trim = std::max<SOffset>(q_begin + query_w_1.size() - ranges[i_end].qbegin, 0);
+            // // subtract this from qend, add this to rbegin
+            // Offset start_query_trim = std::max<SOffset>(best_chain[i].qend - qi_2, 0);
+
+            // Offset start_prefix_trim = std::max(start_target_trim, start_query_trim);
+
+            // // add this to qbegin, subtract this from rend
+            // Offset end_query_trim = std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0);
+
+            // // subtract this from rend, add this to qbegin
+            // Offset end_target_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
+
+            // Offset end_suffix_trim = std::max(end_query_trim, end_target_trim);
+
+            Offset start_target_trim = std::max<SOffset>(t_begin + target_w_1.size() - ranges[i_start].rbegin, 0);
+            Offset start_query_trim = 0; // unknown at this point
+            Offset start_prefix_trim = std::max(start_target_trim, start_query_trim);
+
+            Offset end_query_trim = std::max<SOffset>(q_begin + query_w_1.size() - ranges[i_end].qbegin, 0);
+            Offset end_target_trim = 0; // unknown at this point;
+            Offset end_suffix_trim = std::max(end_query_trim, end_target_trim);
 
             if (i_start != i_end) {
-                if (start_trim >= ranges[i_start].size())
+                if (start_prefix_trim >= ranges[i_start].size())
                     return 0;
 
-                if (end_trim >= ranges[i_end].size())
+                if (end_suffix_trim >= ranges[i_end].size())
                     return 0;
             } else {
-                if (std::max(start_trim, end_trim) >= ranges[i_start].size())
+                if (start_prefix_trim + end_suffix_trim >= ranges[i_start].size())
                     return 0;
             }
 
@@ -375,29 +391,38 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
                                                 i_next);
 
             // for reference
-            // Offset start_prefix_trim = std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0);
-            // Offset start_suffix_trim = std::max<SOffset>(best_chain[i].qend - qi_2, 0);
-            // best_chain[i].trim_prefix(start_prefix_trim, false);
-            // best_chain[i].trim_suffix(start_suffix_trim, false);
+            // // add this to rbegin, subtract this from qend
+            // Offset start_target_trim = std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0);
 
-            // Offset end_prefix_trim = std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0);
-            // Offset end_suffix_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
-            // best_chain[j - 1].trim_prefix(end_prefix_trim, false);
-            // best_chain[j - 1].trim_suffix(end_suffix_trim, false);
+            // // subtract this from qend, add this to rbegin
+            // Offset start_query_trim = std::max<SOffset>(best_chain[i].qend - qi_2, 0);
 
-            Offset start_prefix_trim = std::max<SOffset>(t_begin_open + target_w_1.size() - ranges[i_start].rbegin, 0);
-            Offset start_suffix_trim = std::max<SOffset>(ranges[i_start].qend - q_begin_close, 0);
-            Offset end_prefix_trim = std::max<SOffset>(q_begin_open + query_w_1.size() - ranges[i_end].qbegin, 0);
-            Offset end_suffix_trim = std::max<SOffset>(ranges[i_end].rend - t_begin_close, 0);
+            // Offset start_prefix_trim = std::max(start_target_trim, start_query_trim);
+
+            // // add this to qbegin, subtract this from rend
+            // Offset end_query_trim = std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0);
+
+            // // subtract this from rend, add this to qbegin
+            // Offset end_target_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
+
+            // Offset end_suffix_trim = std::max(end_query_trim, end_target_trim);
+
+            Offset start_target_trim = std::max<SOffset>(t_begin_open + target_w_1.size() - ranges[i_start].rbegin, 0);
+            Offset start_query_trim = std::max<SOffset>(ranges[i_start].qend - q_begin_close, 0);
+            Offset start_prefix_trim = std::max(start_target_trim, start_query_trim);
+
+            Offset end_query_trim = std::max<SOffset>(q_begin_open + query_w_1.size() - ranges[i_end].qbegin, 0);
+            Offset end_target_trim = std::max<SOffset>(ranges[i_end].rend - t_begin_close, 0);
+            Offset end_suffix_trim = std::max(end_query_trim, end_target_trim);
 
             if (i_start != i_end) {
-                if (start_prefix_trim + start_suffix_trim >= ranges[i_start].size())
+                if (start_prefix_trim >= ranges[i_start].size())
                     return 0;
 
-                if (end_prefix_trim + end_suffix_trim >= ranges[i_end].size())
+                if (end_suffix_trim >= ranges[i_end].size())
                     return 0;
             } else {
-                if (std::max(start_prefix_trim, end_prefix_trim) + std::max(start_suffix_trim, end_suffix_trim) >= ranges[i_start].size())
+                if (start_prefix_trim + end_suffix_trim >= ranges[i_start].size())
                     return 0;
             }
 
@@ -752,6 +777,7 @@ void reseed_large_gaps(std::string_view target,
             qlen += prev_mum_length + next_mum_length;
 
             std::string_view query_w(query_w_1.data() - prev_mum_length, qlen);
+            assert(query_w.data() - query.data() == qi_1);
             assert(std::string_view(target_w.data(), prev_mum_length)
                     == std::string_view(query_w.data(), prev_mum_length));
             assert(std::string_view(target_w.data() + tlen - next_mum_length, next_mum_length)
@@ -872,7 +898,11 @@ void reseed_large_gaps(std::string_view target,
                 assert(mum.size());
                 new_fw_seeds += !mum.qorientation;
                 new_rc_seeds += mum.qorientation;
-                mum.shift_start(ti_1, qi_1);
+
+                mum.shift_start(
+                    ti_1,
+                    qi_1
+                );
                 assert(mum.check_equal(target, query, query_rc));
             });
 
@@ -1071,36 +1101,30 @@ compute_invs(std::string_view target,
             assert(ti_2 + static_cast<SOffset>(target_w_2.size()) == best_chain[j].rbegin);
             assert(qi_2 + static_cast<SOffset>(query_rc_w_2.size()) == best_chain[j].qbegin);
 
-            Offset start_prefix_trim = std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0);
-            Offset start_suffix_trim = std::max<SOffset>(best_chain[i].qend - qi_2, 0);
-            Offset end_prefix_trim = std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0);
-            Offset end_suffix_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
+            // add this to rbegin, subtract this from qend
+            Offset start_target_trim = std::max<SOffset>(ti_1 + target_w_1.size() - best_chain[i].rbegin, 0);
 
-            if (i != j - 1) {
-                assert(best_chain[i].check_equal(target, query, query_rc));
+            // subtract this from qend, add this to rbegin
+            Offset start_query_trim = std::max<SOffset>(best_chain[i].qend - qi_2, 0);
 
-                best_chain[i].trim_prefix(start_prefix_trim, false);
-                assert(best_chain[i].check_equal(target, query, query_rc));
+            Offset start_prefix_trim = std::max(start_target_trim, start_query_trim);
 
-                best_chain[i].trim_suffix(start_suffix_trim, false);
-                assert(best_chain[i].check_equal(target, query, query_rc));
+            // add this to qbegin, subtract this from rend
+            Offset end_query_trim = std::max<SOffset>(qi_1 + query_w_1.size() - best_chain[j - 1].qbegin, 0);
 
-                assert(best_chain[j - 1].check_equal(target, query, query_rc));
+            // subtract this from rend, add this to qbegin
+            Offset end_target_trim = std::max<SOffset>(best_chain[j - 1].rend - ti_2, 0);
 
-                best_chain[j - 1].trim_prefix(end_prefix_trim, false);
-                assert(best_chain[j - 1].check_equal(target, query, query_rc));
+            Offset end_suffix_trim = std::max(end_query_trim, end_target_trim);
 
-                best_chain[j - 1].trim_suffix(end_suffix_trim, false);
-                assert(best_chain[j - 1].check_equal(target, query, query_rc));
-            } else {
-                assert(best_chain[i].check_equal(target, query, query_rc));
+            assert(best_chain[i].check_equal(target, query, query_rc));
+            assert(best_chain[j - 1].check_equal(target, query, query_rc));
 
-                best_chain[i].trim_prefix(std::max(start_prefix_trim, end_prefix_trim), false);
-                assert(best_chain[i].check_equal(target, query, query_rc));
+            best_chain[i].trim_prefix(start_prefix_trim);
+            assert(best_chain[i].check_equal(target, query, query_rc));
 
-                best_chain[i].trim_suffix(std::max(start_suffix_trim, end_suffix_trim), false);
-                assert(best_chain[i].check_equal(target, query, query_rc));
-            }
+            best_chain[j - 1].trim_suffix(end_suffix_trim);
+            assert(best_chain[j - 1].check_equal(target, query, query_rc));
         }
     }
 
