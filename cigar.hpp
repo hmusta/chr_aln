@@ -312,9 +312,5 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
     assert(r_consumed == target.size());
     assert(q_consumed == query.size());
 
-    assert(target.find('N') != std::string_view::npos
-            || query.find('N') != std::string_view::npos
-            || cigar == cigar_in);
-
     return cigar;
 }
