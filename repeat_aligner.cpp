@@ -40,9 +40,9 @@ get_alignment(wfa::WFAligner& aligner,
             cigar = cigar_fix_n(base_cigar, target, query);
         }
     } else if (query.size()) {
-        cigar = std::to_string(query.size()) + "I";
+        cigar = std::to_string(query.size()) + QUERY_CONSUME_OP;
     } else if (target.size()) {
-        cigar = std::to_string(target.size()) + "D";
+        cigar = std::to_string(target.size()) + TARGET_CONSUME_OP;
     } else {
         n_penalty = 0;
     }

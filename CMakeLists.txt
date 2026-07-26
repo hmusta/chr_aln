@@ -76,6 +76,7 @@ target_include_directories(libchraln SYSTEM PUBLIC
     unialigner/tandem_aligner/src/tools
     unialigner/tandem_aligner/src/projects/tandem_aligner
     mummer/include/mummer
+    cpp_progress_bar
 )
 target_link_libraries(libchraln PRIVATE
     wfa2::wfa2cpp_static

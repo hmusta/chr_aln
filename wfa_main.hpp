@@ -814,7 +814,7 @@ run_alignment_gaps(wfa::WFAligner& aligner,
         }
         #endif
         std::cout << "Then gap of length " << taken_gaps << "\n";
-        cigar += std::to_string(taken_gaps) + "M";
+        cigar += std::to_string(taken_gaps) + MATCH_OP;
 
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query.substr(0, qi), target.substr(0, ti)), score_model);
@@ -830,14 +830,14 @@ run_alignment_gaps(wfa::WFAligner& aligner,
 
     if (query_left == 0 && target_left > 0) {
         std::cout << "Final insertion of length " << target_left << "\n";
-        cigar += std::to_string(target_left) + "I";
+        cigar += std::to_string(target_left) + TARGET_CONSUME_OP;
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query, target), score_model);
         std::cout << "Score so far score " << score << "\n";
         #endif
     } else if (query_left > 0 && target_left == 0) {
         std::cout << "Final deletion of length " << query_left << "\n";
-        cigar += std::to_string(query_left) + "D";
+        cigar += std::to_string(query_left) + QUERY_CONSUME_OP;
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query, target), score_model);
         std::cout << "Score so far score " << score << "\n";

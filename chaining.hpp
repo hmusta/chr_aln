@@ -1,7 +1,5 @@
 #pragma once
 
-#include "helpers.hpp"
-
 #include <algorithm>
 #include <functional>
 #include <numbers>
@@ -20,8 +18,10 @@
 #include <cstdint>
 
 #include <omp.h>
+#include <progress_bar.hpp>
 
-#include "cpp_progress_bar/progress_bar.hpp"
+#include "helpers.hpp"
+#include "cigar.hpp"
 
 using kmer_t = uint64_t;
 
@@ -245,10 +245,10 @@ static_assert(sizeof(LastOp) == 1);
 inline char op_to_char(LastOp op) {
     switch (op) {
         case LastOp::CLIPPED: { return 'S'; } break;
-        case LastOp::INSERT: { return 'I'; } break;
-        case LastOp::DELETE: { return 'D'; } break;
-        case LastOp::MATCH: { return '='; } break;
-        case LastOp::MISMATCH: { return 'X'; } break;
+        case LastOp::INSERT: { return QUERY_CONSUME_OP; } break;
+        case LastOp::DELETE: { return TARGET_CONSUME_OP; } break;
+        case LastOp::MATCH: { return EQ_OP; } break;
+        case LastOp::MISMATCH: { return NEQ_OP; } break;
         case LastOp::INVERTED: { return 'i'; } break;
     }
 
