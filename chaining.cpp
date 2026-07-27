@@ -615,9 +615,7 @@ void reseed_large_gaps(std::string_view target,
                        bool show_progress,
                        bool show_progress_per_chaining) {
     size_t old_chain_size = best_chain.size();
-    ProgressBar progress_bar(best_chain.size(), "Reseeding", std::cerr, !show_progress);
-    ++progress_bar;
-    for (size_t i = 1; i < best_chain.size(); ++i, ++progress_bar) {
+    for (size_t i = 1; i < best_chain.size(); ++i) {
         assert(inv_starts.size() == best_chain.size());
         assert(inv_ends.size() == best_chain.size());
         bool qorientation_last = best_chain[i - 1].qorientation;
@@ -876,7 +874,7 @@ void reseed_large_gaps(std::string_view target,
                 target_w, query_w, query_rc_w, mums, score_model, local_chain_score_model,
                 check_inversions,
                 std::min<size_t>(nthreads, mums.size() * (mums.size() - 1)),
-                show_progress
+                show_progress_per_chaining
             );
 
             if (local_chain.empty()) {

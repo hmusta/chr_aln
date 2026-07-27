@@ -712,10 +712,7 @@ int main(int argc, char** argv) {
               << static_cast<double>(identity) / std::min(query.size(), target.size()) * 100.0
               << "\tfwd nt: " << query.size() - ninv << "\tinv nt: " << ninv << std::endl;
 
-    #ifndef NDEBUG
     std::string query_prc;
-    #endif
-
     std::vector<std::tuple<Offset, Offset, Offset, Offset>> inv_ranges;
 
     if (check_inversions) {
@@ -725,10 +722,7 @@ int main(int argc, char** argv) {
         SOffset ri = 0;
         SOffset r_inv_begin = -1;
         SOffset r_inv_end = -1;
-
-        #ifndef NDEBUG
         SOffset q_last = 0;
-        #endif
 
 
         for (size_t i = 0; i < inverted.size(); ++i) {
@@ -755,14 +749,12 @@ int main(int argc, char** argv) {
 
                 inv_ranges.emplace_back(r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
 
-                #ifndef NDEBUG
                 assert(q_inv_begin >= q_last);
                 query_prc += query.substr(q_last, q_inv_begin - q_last)
                             + reverse_complement(query.substr(q_inv_begin, q_inv_end - q_inv_begin))
                             + query.substr(q_inv_end, qi + q_consumed - q_inv_end);
                 q_last = qi + q_consumed;
                 assert(static_cast<SOffset>(query_prc.size()) == q_last);
-                #endif
 
                 q_inv_begin = -1;
                 q_inv_end = -1;
@@ -781,20 +773,16 @@ int main(int argc, char** argv) {
 
             inv_ranges.emplace_back(r_inv_begin, ri, q_inv_begin, qi);
 
-            #ifndef NDEBUG
             assert(q_inv_begin >= q_last);
             assert(q_inv_end >= q_inv_begin);
             query_prc += query.substr(q_last, q_inv_begin - q_last)
                         + reverse_complement(query.substr(q_inv_begin, qi - q_inv_begin));
             assert(query_prc.size() == query.size());
             q_last = qi;
-            #endif
         }
 
-        #ifndef NDEBUG
         query_prc += query.substr(q_last);
         assert(query_prc.size() == query.size());
-        #endif
 
         std::cout << "Inversions:";
         for (const auto &[r_inv_begin, r_inv_end, q_inv_begin, q_inv_end] : inv_ranges) {
@@ -805,8 +793,9 @@ int main(int argc, char** argv) {
         std::cout << "\n";
     }
 
-    #ifndef NDEBUG
     std::string_view query_check(check_inversions ? query_prc : query);
+
+    #ifndef NDEBUG
     std::string final_cigar;
     #endif
 
@@ -878,7 +867,8 @@ int main(int argc, char** argv) {
             case TARGET_CONSUME_OP: {
                 assert(r_pos + op_len <= target.size());
 
-                Offset n = std::count(target.data() + r_pos, target.data() + r_pos + op_len, 'N');
+                auto target_w = target.substr(r_pos, op_len);
+                Offset n = std::count(target_w.begin(), target_w.end(), 'N');
                 n_ref += n;
 
                 if (op_len - n > long_indel_cutoff) {
@@ -889,7 +879,8 @@ int main(int argc, char** argv) {
             case QUERY_CONSUME_OP: {
                 assert(q_pos + op_len <= query.size());
 
-                Offset n = std::count(query.data() + q_pos, query.data() + q_pos + op_len, 'N');
+                auto query_w = query_check.substr(q_pos, op_len);
+                Offset n = std::count(query_w.begin(), query_w.end(), 'N');
                 n_qry += n;
                 if (op_len - n > long_indel_cutoff) {
                     n_longindel_qry += op_len - n;
@@ -897,7 +888,9 @@ int main(int argc, char** argv) {
                 q_pos += op_len;
             }
         }
+
         std::cout << op_len << last_op;
+
         #ifndef NDEBUG
         final_cigar += std::to_string(op_len) + last_op;
 
