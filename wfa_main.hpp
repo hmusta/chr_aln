@@ -120,7 +120,6 @@ inline bool wf_extend(
         T q_end,
         U t_begin,
         U t_end,
-        Penalty p,
         Wavefront& wf,
         const MismatchGetter& get_mismatch_it,
         const WFElemCallback& callback = [](Offset, Offset, Offset, Offset, Offset, Offset) {},

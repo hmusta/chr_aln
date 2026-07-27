@@ -61,6 +61,9 @@ struct Breakpoints {
                     bool get_cigar,
                     SOffset heuristics_length_cutoff,
                     bool penalty_to_score) const {
+        // TODO
+        std::ignore = get_cigar;
+
         if (!t2_left_gap && !t2_right_gap && !q1_right_gap && !q2_right_gap) {
             std::string query_2_cat(query_2);
             query_2_cat += query_rc_2;
@@ -125,6 +128,9 @@ struct Breakpoints {
                    bool get_cigar,
                    SOffset heuristics_length_cutoff,
                    bool penalty_to_score) const {
+        // TODO
+        std::ignore = get_cigar;
+
         if (!t1_left_gap && !t1_right_gap && !q1_left_gap && !q2_left_gap) {
             std::string query_1_cat(query_1);
             query_1_cat += query_rc_1;
@@ -779,7 +785,7 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             query, target,
             true,
             heuristics_length_cutoff,
-            min_diag, max_diag
+            min_k, max_k
         );
         score += inv_ext_s * query.size();
         return std::make_pair(score, std::move(cigar));

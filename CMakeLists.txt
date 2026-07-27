@@ -21,7 +21,7 @@ elseif(${CMAKE_BUILD_TYPE} MATCHES PROFILE)
     add_link_options(-g)
 endif()
 
-add_compile_options(-Wall -march=native)
+add_compile_options(-Wall -Wextra -march=native)
 
 set(OPENMP ON CACHE BOOL "Enable OpenMP" FORCE)
 find_package(OpenMP REQUIRED)

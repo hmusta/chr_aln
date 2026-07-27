@@ -202,7 +202,7 @@ class WFAIterator {
 
     void extend(const Callback &callback = [](Offset, Offset, Offset) {},
                 Penalty min_p = ScoreModel::inf_p) {
-        wf_extend(qbegin_, qend_, tbegin_, tend_, p_, table_[p_], mismatch_getter,
+        wf_extend(qbegin_, qend_, tbegin_, tend_, table_[p_], mismatch_getter,
             [&](Offset q_mm_b, Offset q_mm_e, Offset t_mm_b, Offset t_mm_e,
                 Offset, Offset, Offset, Offset) {
                 process(min_p, q_mm_b, q_mm_e, t_mm_b, t_mm_e, callback);

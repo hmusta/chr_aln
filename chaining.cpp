@@ -50,7 +50,6 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
                                                    std::string_view query,
                                                    std::string_view query_rc,
                                                    std::vector<Ranges>& ranges,
-                                                   const ScoreModel &score_model,
                                                    const ChainScoreModel &chain_score_model,
                                                    bool chain_inversions,
                                                    size_t nthreads,
@@ -73,7 +72,9 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
     };
 
     auto get_gap_score = [&chain_score_model](SOffset rend_a, SOffset rend_b, SOffset qend_a,
-                                              SOffset qend_b, SOffset overlap = 0, bool is_end = false) -> Score {
+                                              SOffset qend_b,
+                                              SOffset /* overlap */ = 0,
+                                              bool /* is_end */ = false) -> Score {
         assert(rend_a <= rend_b);
         assert(qend_a <= qend_b);
         SOffset dist = rend_b - rend_a;
@@ -85,7 +86,8 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
 
     auto get_mismatch_score
             = [&chain_score_model](SOffset rend_a, SOffset rend_b, SOffset qend_a,
-                                SOffset qend_b, SOffset overlap = 0, bool is_end = false) -> Score {
+                                   SOffset qend_b, SOffset overlap = 0,
+                                   bool /* is_end */ = false) -> Score {
         assert(rend_a <= rend_b);
         assert(qend_a <= qend_b);
         SOffset dist = rend_b - rend_a;
@@ -93,6 +95,10 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
 
         SOffset min_dist = std::min(dist, qdist);
         assert(min_dist >= overlap);
+
+        #ifdef NDEBUG
+        std::ignore = overlap;
+        #endif
 
         return chain_score_model.get_mismatch_score(min_dist);
     };
@@ -614,6 +620,9 @@ void reseed_large_gaps(std::string_view target,
                        size_t nthreads,
                        bool show_progress,
                        bool show_progress_per_chaining) {
+    // TODO: implement a progress bar based on coords of old_chain_size
+    std::ignore = show_progress;
+
     size_t old_chain_size = best_chain.size();
     for (size_t i = 1; i < best_chain.size(); ++i) {
         assert(inv_starts.size() == best_chain.size());
@@ -669,7 +678,7 @@ void reseed_large_gaps(std::string_view target,
             );
 
             auto [local_chain, local_chain_score] = chain_ranges(
-                target_w, query_w, query_rc_w, mums, score_model, local_chain_score_model,
+                target_w, query_w, query_rc_w, mums, local_chain_score_model,
                 check_inversions,
                 std::min<size_t>(nthreads, mums.size() * (mums.size() - 1)),
                 show_progress_per_chaining
@@ -871,7 +880,7 @@ void reseed_large_gaps(std::string_view target,
             );
 
             auto [local_chain, local_chain_score] = chain_ranges(
-                target_w, query_w, query_rc_w, mums, score_model, local_chain_score_model,
+                target_w, query_w, query_rc_w, mums, local_chain_score_model,
                 check_inversions,
                 std::min<size_t>(nthreads, mums.size() * (mums.size() - 1)),
                 show_progress_per_chaining

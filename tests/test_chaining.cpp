@@ -36,7 +36,7 @@ TEST(ChainingTest, NoOverlapNoInv) {
     ChainScoreModel chain_score_model(target_middle.size(), score_model.gap_switch, exp_mismatch_frac_between_mum_bp, max_gap);
 
     auto [chain, chain_score]
-            = chain_ranges(target, query, query_rc, ranges, score_model, chain_score_model);
+            = chain_ranges(target, query, query_rc, ranges, chain_score_model);
 
     ASSERT_LE(2u, chain.size());
     EXPECT_EQ(0u, chain.front().size());
@@ -77,9 +77,10 @@ TEST(ChainingTest, NoOverlap) {
     double exp_mismatch_frac_between_mum_bp = 0.01;
     SOffset max_gap = max_offset;
     ChainScoreModel chain_score_model(target_middle.size(), score_model.gap_switch, exp_mismatch_frac_between_mum_bp, max_gap);
+    bool check_inversions = true;
 
     auto [chain, chain_score]
-            = chain_ranges(target, query, query_rc, ranges, score_model, chain_score_model, true);
+            = chain_ranges(target, query, query_rc, ranges, chain_score_model, check_inversions);
 
     ASSERT_LE(2u, chain.size());
     EXPECT_EQ(0u, chain.front().size());
@@ -123,9 +124,10 @@ TEST(ChainingTest, Overlap) {
     double exp_mismatch_frac_between_mum_bp = 0.01;
     SOffset max_gap = max_offset;
     ChainScoreModel chain_score_model(target_middle.size(), score_model.gap_switch, exp_mismatch_frac_between_mum_bp, max_gap);
+    bool check_inversions = true;
 
     auto [chain, chain_score]
-            = chain_ranges(target, query, query_rc, ranges, score_model, chain_score_model, true);
+            = chain_ranges(target, query, query_rc, ranges, chain_score_model, check_inversions);
 
     ASSERT_LE(2u, chain.size());
     EXPECT_EQ(0u, chain.front().size());

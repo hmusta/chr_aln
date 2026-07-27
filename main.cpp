@@ -96,6 +96,8 @@ int main(int argc, char** argv) {
                   << std::endl;
     }
 
+    Offset long_indel_cutoff = 25;
+
     auto query_rc = reverse_complement(query);
 
     std::cout << "Aligning: " << theader << " " << target.size() << " -> " << qheader
@@ -162,7 +164,7 @@ int main(int argc, char** argv) {
 
     std::cout << "Chaining " << mummer_ranges.size() << " MUMs\n";
     auto [best_chain, chain_score]
-            = chain_ranges(target, query, query_rc, mummer_ranges, score_model, chain_score_model,
+            = chain_ranges(target, query, query_rc, mummer_ranges, chain_score_model,
                            check_inversions, nthreads_chaining,
                            true /* show_progress */);
 
@@ -170,7 +172,7 @@ int main(int argc, char** argv) {
         auto rc_mummer_ranges = rc_ranges(mummer_ranges, query.size());
         std::cout << "Chaining " << rc_mummer_ranges.size() << " rev-comp MUMs\n";
         auto [best_chain_rc, chain_score_rc]
-                = chain_ranges(target, query_rc, query, rc_mummer_ranges, score_model, chain_score_model,
+                = chain_ranges(target, query_rc, query, rc_mummer_ranges, chain_score_model,
                                check_inversions, nthreads_chaining,
                                true /* show_progress */);
 
@@ -807,7 +809,6 @@ int main(int argc, char** argv) {
     Offset n_qry = 0;
     Offset n_longindel_ref = 0;
     Offset n_longindel_qry = 0;
-    Offset long_indel_cutoff = 25;
     auto push_op = [&](char last_op, int64_t op_len) {
         assert(op_len > 0);
         switch (last_op) {
