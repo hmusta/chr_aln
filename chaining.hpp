@@ -244,12 +244,12 @@ static_assert(sizeof(LastOp) == 1);
 
 inline char op_to_char(LastOp op) {
     switch (op) {
-        case LastOp::CLIPPED: { return 'S'; } break;
+        case LastOp::CLIPPED: { return N_OP; } break;
         case LastOp::INSERT: { return QUERY_CONSUME_OP; } break;
         case LastOp::DELETE: { return TARGET_CONSUME_OP; } break;
         case LastOp::MATCH: { return EQ_OP; } break;
         case LastOp::MISMATCH: { return NEQ_OP; } break;
-        case LastOp::INVERTED: { return 'i'; } break;
+        case LastOp::INVERTED: { return INV_OP; } break;
     }
 
     assert(false && "This should not happen");
@@ -419,7 +419,8 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
                                                    const ScoreModel &score_model,
                                                    const ChainScoreModel &chain_score_model,
                                                    bool chain_inversions = false,
-                                                   size_t nthreads = 1);
+                                                   size_t nthreads = 1,
+                                                   bool show_progress = false);
 
 std::vector<Ranges> rc_ranges(const std::vector<Ranges>& mummer_ranges, SOffset query_size);
 
@@ -435,7 +436,9 @@ void reseed_large_gaps(std::string_view target,
                        SOffset max_gap = max_offset,
                        double exp_mismatch_frac_between_mum_bp = 0.01,
                        bool check_inversions = false,
-                       size_t nthreads = 1);
+                       size_t nthreads = 1,
+                       bool show_progress = false,
+                       bool show_progress_per_chaining = false);
 
 std::pair<Diag, Diag> compute_diag(const std::string& target,
                                    const std::string& query,

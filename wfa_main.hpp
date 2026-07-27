@@ -71,7 +71,7 @@ inline void check_lengths(const wfa::WFAligner& aligner,
 
     if (static_cast<uint64_t>(max_pen) * total_length
             > static_cast<uint64_t>(std::numeric_limits<wfa_score_t>::max())) {
-        std::cerr << "length(Q) + length(T) must be below "
+        std::cerr << "ERROR: length(Q) + length(T) must be below "
                   << static_cast<uint64_t>(std::numeric_limits<wfa_score_t>::max()) / max_pen
                   << std::endl;
         throw std::runtime_error("Sequences are too long");

@@ -48,7 +48,7 @@ get_alignment(wfa::WFAligner& aligner,
     }
 
     assert((query.empty() && target.empty()) || cigar.size());
-    assert(check_cigar_seq_lengths(cigar, target.size(), query.size()));
+    assert(cigar == cigar_fix_n(cigar, target, query));
     Score score;
     if (n_penalty != INT32_MIN) {
         score = penalty_to_score

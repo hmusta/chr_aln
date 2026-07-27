@@ -3,6 +3,7 @@
 #include "helpers.hpp"
 
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -10,17 +11,36 @@
 #include <cassert>
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 
-static constexpr char EQ_OP = '=';
-static constexpr char NEQ_OP = 'X';
-static constexpr char MATCH_OP = 'M';
-static constexpr char TARGET_CONSUME_OP = 'D';
+// canonical CIGAR operations
+// static const char *CIGAR_OPS = "MIDNSHP=X";
+
+static constexpr char MATCH_OP = 'M'; // consumes both
 static constexpr char QUERY_CONSUME_OP = 'I';
+static constexpr char TARGET_CONSUME_OP = 'D';
+static constexpr char TARGET_CLIP_OP = 'N';
+static constexpr char QUERY_CLIP_OP = 'S';
+static constexpr char QUERY_HARDCLIP_OP = 'H';
+static constexpr char PAD_OP = 'P'; // consumes none
+static constexpr char EQ_OP = '='; // consumes both
+static constexpr char NEQ_OP = 'X'; // consumes both
+static constexpr char INV_OP = 'i'; // consumes none, but query should have space for it
+static constexpr char N_OP = '\0';
 
 inline void cigar_caller(const std::string& cigar,
-                  const std::function<void(char, int64_t)>& callback,
-                  const std::function<bool()>& terminate = []() { return false; }) {
-    int64_t num = 0;
+                         const std::function<void(char, Offset, Offset, Offset)>& callback,
+                         Offset r_len = std::numeric_limits<Offset>::max(),
+                         Offset q_len = std::numeric_limits<Offset>::max(),
+                         const std::function<bool()>& terminate = []() { return false; }) {
+    assert(cigar.empty() || cigar.size() >= 2);
+    assert(cigar.empty() || std::isdigit(cigar[0]));
+    assert(cigar.empty() || !std::isdigit(cigar.back()));
+
+    Offset num = 0;
+    Offset r_pos = 0;
+    Offset q_pos = 0;
+
     for (char c : cigar) {
         if (terminate())
             return;
@@ -30,7 +50,37 @@ inline void cigar_caller(const std::string& cigar,
         } else {
             assert(num);
             if (!terminate()) {
-                callback(c, num);
+                switch (c) {
+                    case EQ_OP:
+                    case MATCH_OP:
+                    case NEQ_OP: {
+                        assert(r_pos + num <= r_len);
+                        assert(q_pos + num <= q_len);
+                        callback(c, num, r_pos, q_pos);
+                        r_pos += num;
+                        q_pos += num;
+                    } break;
+                    case TARGET_CONSUME_OP: {
+                        assert(r_pos + num <= r_len);
+                        callback(c, num, r_pos, q_pos);
+                        r_pos += num;
+                    } break;
+                    case QUERY_CONSUME_OP: {
+                        assert(q_pos + num <= q_len);
+                        callback(c, num, r_pos, q_pos);
+                        q_pos += num;
+                    } break;
+                    case INV_OP: {
+                        assert(q_pos + num <= q_len);
+                        callback(c, num, r_pos, q_pos);
+                    } break;
+                    default: {
+                        std::cerr << "\n\nInvalid character in CIGAR\n"
+                                << cigar << "\n\n"
+                                << std::endl;
+                        assert(false);
+                    }
+                }
             } else {
                 return;
             }
@@ -39,57 +89,24 @@ inline void cigar_caller(const std::string& cigar,
     }
 
     assert(num == 0);
+    assert(r_len == std::numeric_limits<Offset>::max() || r_len == r_pos);
+    assert(q_len == std::numeric_limits<Offset>::max() || q_len == q_pos);
 }
 
-inline std::pair<int64_t, int64_t> count_identities_and_matches(const std::string& cigar) {
+inline std::pair<int64_t, int64_t> count_identities_and_matches(const std::string& cigar,
+                                                                Offset r_len = std::numeric_limits<Offset>::max(),
+                                                                Offset q_len = std::numeric_limits<Offset>::max()) {
     int64_t identities = 0;
     int64_t matches = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
+    cigar_caller(cigar, [&](char c, Offset num, Offset /* r_pos */, Offset /* q_pos */) {
         switch (c) {
             case EQ_OP: identities += num; [[fallthrough]];
             case NEQ_OP:
             case MATCH_OP: { matches += num; } break;
         }
-    });
+    }, r_len, q_len);
 
     return std::make_pair(identities, matches);
-}
-
-inline bool check_cigar_seq_lengths(const std::string& cigar,
-                                    SOffset r_consumed,
-                                    SOffset q_consumed) {
-    SOffset r_consumed_test = 0;
-    SOffset q_consumed_test = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
-        switch (c) {
-            case NEQ_OP:
-            case MATCH_OP:
-            case EQ_OP: {
-                assert(r_consumed_test + num <= r_consumed);
-                assert(q_consumed_test + num <= q_consumed);
-                r_consumed_test += num;
-                q_consumed_test += num;
-            } break;
-            case QUERY_CONSUME_OP: {
-                assert(q_consumed_test + num <= q_consumed);
-                q_consumed_test += num;
-            } break;
-            case TARGET_CONSUME_OP: {
-                assert(r_consumed_test + num <= r_consumed);
-                r_consumed_test += num;
-            } break;
-            default: {
-                std::cerr << "\n\nInvalid character in CIGAR\n"
-                          << cigar << "\n\n"
-                          << std::endl;
-                assert(false);
-            }
-        }
-    });
-
-    assert(r_consumed_test == r_consumed);
-    assert(q_consumed_test == q_consumed);
-    return r_consumed_test == r_consumed && q_consumed_test == q_consumed;
 }
 
 inline Score score_cigar(const std::string& cigar,
@@ -100,13 +117,14 @@ inline Score score_cigar(const std::string& cigar,
     auto it_q = query.begin();
     auto it_r = target.begin();
     Score score = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
+    cigar_caller(cigar, [&](char c, Offset num, Offset r_pos, Offset q_pos) {
+        assert(it_q == query.begin() + q_pos);
+        assert(it_r == target.begin() + r_pos);
         switch (c) {
             case MATCH_OP: {
                 if (!penalty)
                     score += score_model.match_s * num;
-                assert(it_q + num <= query.end());
-                assert(it_r + num <= target.end());
+
                 assert(std::equal(it_r, it_r + num, it_q, [](char a, char b) { return a == 'N' || b == 'N'; }));
                 it_q += num;
                 it_r += num;
@@ -114,126 +132,103 @@ inline Score score_cigar(const std::string& cigar,
             case EQ_OP: {
                 if (!penalty)
                     score += score_model.match_s * num;
-                assert(it_q + num <= query.end());
-                assert(it_r + num <= target.end());
                 assert(std::equal(it_q, it_q + num, it_r));
                 it_q += num;
                 it_r += num;
             } break;
             case NEQ_OP: {
                 score += (!penalty ? score_model.mismatch_s : score_model.mismatch_p) * num;
-                assert(it_q + num <= query.end());
-                assert(it_r + num <= target.end());
-                #ifndef NDEBUG
-                for (int64_t i = 0; i < num; ++i) {
-                    assert(*it_q != *it_r);
-                    ++it_q;
-                    ++it_r;
-                }
-                #endif
+                assert(std::equal(it_q, it_q + num, it_r, [](char a, char b) { return a != b; }));
+                it_q += num;
+                it_r += num;
             } break;
             case TARGET_CONSUME_OP: {
                 score += !penalty ? score_model.get_gap_score(num) : score_model.get_gap_penalty(num);
                 it_r += num;
-                assert(it_r <= target.end());
             } break;
             case QUERY_CONSUME_OP: {
                 score += !penalty ? score_model.get_gap_score(num) : score_model.get_gap_penalty(num);
                 it_q += num;
-                assert(it_q <= query.end());
             } break;
-            default: {
-                std::cerr << "\n\nInvalid character in CIGAR\n"
-                            << cigar << "\n\n"
-                            << std::endl;
-                assert(false);
-            }
         }
-    });
-
-    assert(it_r == target.end());
-    assert(it_q == query.end());
+    }, target.size(), query.size());
 
     return score;
 }
 
-inline size_t cigar_edits(const std::string& cigar) {
+inline size_t cigar_edits(const std::string& cigar,
+                          Offset r_len = std::numeric_limits<Offset>::max(),
+                          Offset q_len = std::numeric_limits<Offset>::max()) {
     size_t edits = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
+    cigar_caller(cigar, [&](char c, Offset num, Offset /* r_pos */, Offset /* q_pos */) {
         switch (c) {
             case MATCH_OP:
             case EQ_OP: break;
             case NEQ_OP:
             case TARGET_CONSUME_OP:
             case QUERY_CONSUME_OP: { edits += num; } break;
-            default: {
-                std::cerr << "\n\nInvalid character in CIGAR\n"
-                            << cigar << "\n\n"
-                            << std::endl;
-                assert(false);
-            }
         }
-    });
+    }, r_len, q_len);
 
     return edits;
 }
 
-inline size_t cigar_get_target_pos(const std::string& cigar, size_t final_query_pos) {
+inline size_t cigar_get_target_pos(const std::string& cigar,
+                                   size_t final_query_pos,
+                                   Offset r_len,
+                                   Offset q_len) {
+    assert(final_query_pos <= q_len);
+    bool terminate = (final_query_pos == q_len);
     size_t target_pos = 0;
-    size_t query_pos = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
-        assert(query_pos <= final_query_pos);
+    cigar_caller(cigar, [&](char c, Offset num, Offset r_pos, Offset q_pos) {
+        assert(q_pos <= final_query_pos);
+        assert(target_pos == r_pos);
+
         switch (c) {
             case EQ_OP:
             case MATCH_OP:
             case NEQ_OP: {
-                size_t next_query_pos = std::min<size_t>(final_query_pos, query_pos + num);
-                num = next_query_pos - query_pos;
-                query_pos = next_query_pos;
-                target_pos += num;
+                size_t next_query_pos = std::min<size_t>(final_query_pos, q_pos + num);
+                num = next_query_pos - q_pos;
+                target_pos = r_pos + num;
+                terminate = (next_query_pos == final_query_pos);
             } break;
             case QUERY_CONSUME_OP: {
-                query_pos = std::min<size_t>(final_query_pos, query_pos + num);
+                terminate = (q_pos + num >= final_query_pos);
             } break;
             case TARGET_CONSUME_OP: { target_pos += num; } break;
-            default: {
-                std::cerr << "\n\nInvalid character in CIGAR\n"
-                            << cigar << "\n\n"
-                            << std::endl;
-                assert(false);
-            }
         }
-    }, [&]() { return query_pos >= final_query_pos; });
+    }, r_len, q_len, [&]() { return terminate; });
 
     return target_pos;
 }
 
-inline size_t cigar_get_query_pos(const std::string& cigar, size_t final_target_pos) {
-    size_t target_pos = 0;
+inline size_t cigar_get_query_pos(const std::string& cigar,
+                                  size_t final_target_pos,
+                                  Offset r_len,
+                                  Offset q_len) {
+    assert(final_target_pos <= r_len);
+    bool terminate = (final_target_pos == r_len);
     size_t query_pos = 0;
-    cigar_caller(cigar, [&](char c, int64_t num) {
-        assert(target_pos <= final_target_pos);
+    cigar_caller(cigar, [&](char c, Offset num, Offset r_pos, Offset q_pos) {
+        assert(r_pos <= final_target_pos);
+        assert(query_pos == q_pos);
+
         switch (c) {
             case EQ_OP:
             case MATCH_OP:
             case NEQ_OP: {
-                size_t next_target_pos = std::min<size_t>(final_target_pos, target_pos + num);
-                num = next_target_pos - target_pos;
-                target_pos = next_target_pos;
-                query_pos += num;
+                size_t next_target_pos = std::min<size_t>(final_target_pos, r_pos + num);
+                num = next_target_pos - r_pos;
+                query_pos = q_pos + num;
+                terminate = (next_target_pos == final_target_pos);
             } break;
             case QUERY_CONSUME_OP: { query_pos += num; } break;
             case TARGET_CONSUME_OP: {
-                target_pos = std::min<size_t>(final_target_pos, target_pos + num);
+                terminate = (r_pos + num >= final_target_pos);
             } break;
-            default: {
-                std::cerr << "\n\nInvalid character in CIGAR\n"
-                            << cigar << "\n\n"
-                            << std::endl;
-                assert(false);
-            }
         }
-    }, [&]() { return target_pos >= final_target_pos; });
+    }, r_len, q_len, [&]() { return terminate; });
 
     return query_pos;
 }
@@ -242,8 +237,6 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
                                std::string_view target,
                                std::string_view query) {
     std::string cigar;
-    Offset r_consumed = 0;
-    Offset q_consumed = 0;
 
     auto push_op = [&](char c, int64_t num) {
         assert(c == MATCH_OP || c == NEQ_OP || c == EQ_OP);
@@ -251,16 +244,14 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
     };
 
     Offset snum = 0;
-    char last_op = 'S';
-    cigar_caller(cigar_in, [&](char op, int64_t num) {
-        switch (op) {
+    char last_op = N_OP;
+    cigar_caller(cigar_in, [&](char c, Offset num, Offset r_pos, Offset q_pos) {
+        switch (c) {
             case MATCH_OP:
             case EQ_OP:
             case NEQ_OP: {
-                assert(r_consumed + num <= target.size());
-                assert(q_consumed + num <= query.size());
-                std::string_view target_w = target.substr(r_consumed, num);
-                std::string_view query_w = query.substr(q_consumed, num);
+                std::string_view target_w = target.substr(r_pos, num);
+                std::string_view query_w = query.substr(q_pos, num);
                 for (size_t i = 0; i < target_w.size(); ++i) {
                     char op;
                     if (target_w[i] != 'N' && query_w[i] != 'N') {
@@ -278,39 +269,30 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
                     }
                     last_op = op;
                 }
-                r_consumed += num;
-                q_consumed += num;
             } break;
             case TARGET_CONSUME_OP: {
                 if (snum > 0) {
                     push_op(last_op, snum);
                     snum = 0;
-                    last_op = 'S';
+                    last_op = N_OP;
                 }
-                assert(r_consumed + num <= target.size());
                 cigar += std::to_string(num) + TARGET_CONSUME_OP;
-                r_consumed += num;
                 last_op = TARGET_CONSUME_OP;
             } break;
             case QUERY_CONSUME_OP: {
                 if (snum > 0) {
                     push_op(last_op, snum);
                     snum = 0;
-                    last_op = 'S';
+                    last_op = N_OP;
                 }
-                assert(q_consumed + num <= query.size());
                 cigar += std::to_string(num) + QUERY_CONSUME_OP;
-                q_consumed += num;
                 last_op = QUERY_CONSUME_OP;
             } break;
         }
-    });
+    }, target.size(), query.size());
 
     if (snum > 0)
         push_op(last_op, snum);
-
-    assert(r_consumed == target.size());
-    assert(q_consumed == query.size());
 
     return cigar;
 }

@@ -53,7 +53,8 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
                                                    const ScoreModel &score_model,
                                                    const ChainScoreModel &chain_score_model,
                                                    bool chain_inversions,
-                                                   size_t nthreads) {
+                                                   size_t nthreads,
+                                                   bool show_progress) {
     if (ranges.empty())
         return std::make_pair(ranges, 0);
 
@@ -470,7 +471,8 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
         return 0;
     };
 
-    ProgressBar progress_bar(dp_table.size() * (dp_table.size() - 1) / 2, "Chaining");
+    ProgressBar progress_bar(dp_table.size() * (dp_table.size() - 1) / 2,
+                             "Chaining", std::cerr, !show_progress);
     for (size_t i = 0; i < dp_table.size(); ++i) {
         #pragma omp parallel for num_threads(nthreads)
         for (size_t j = i + 1; j < dp_table.size(); ++j) {
@@ -609,9 +611,13 @@ void reseed_large_gaps(std::string_view target,
                        SOffset max_gap,
                        double exp_mismatch_frac_between_mum_bp,
                        bool check_inversions,
-                       size_t nthreads) {
+                       size_t nthreads,
+                       bool show_progress,
+                       bool show_progress_per_chaining) {
     size_t old_chain_size = best_chain.size();
-    for (size_t i = 1; i < best_chain.size(); ++i) {
+    ProgressBar progress_bar(best_chain.size(), "Reseeding", std::cerr, !show_progress);
+    ++progress_bar;
+    for (size_t i = 1; i < best_chain.size(); ++i, ++progress_bar) {
         assert(inv_starts.size() == best_chain.size());
         assert(inv_ends.size() == best_chain.size());
         bool qorientation_last = best_chain[i - 1].qorientation;
@@ -637,7 +643,7 @@ void reseed_large_gaps(std::string_view target,
             assert(qi + query_w.size() <= query_rc.size());
             std::string_view query_rc_w(query_rc.data() + query_rc.size() - qi - query_w.size(),
                                         query_w.size());
-            assert(query_rc_w == reverse_complement(query_w));
+            assert(is_reverse_complement(query_w, query_rc_w));
 
             std::vector<Ranges> mums;
             size_t num_fw_seeds = 0;
@@ -667,7 +673,8 @@ void reseed_large_gaps(std::string_view target,
             auto [local_chain, local_chain_score] = chain_ranges(
                 target_w, query_w, query_rc_w, mums, score_model, local_chain_score_model,
                 check_inversions,
-                std::min<size_t>(nthreads, mums.size() * (mums.size() - 1))
+                std::min<size_t>(nthreads, mums.size() * (mums.size() - 1)),
+                show_progress_per_chaining
             );
 
             if (local_chain.empty()) {
@@ -746,8 +753,8 @@ void reseed_large_gaps(std::string_view target,
                                                 inv_ends[i] + 1);
             assert(ql_2 == qorientation);
 
-            assert(query_w_1.size() == query_w_2.size());
-            assert(query_rc_w_1.size() == query_rc_w_2.size());
+            assert(is_reverse_complement(query_w_1, query_w_2));
+            assert(is_reverse_complement(query_rc_w_1, query_rc_w_2));
 
             if (!check_if_heuristics(
                         std::max(query_w_1.size(), query_rc_w_1.size()) + std::max(query_w_2.size(), query_rc_w_2.size()),
@@ -784,7 +791,7 @@ void reseed_large_gaps(std::string_view target,
                     == std::string_view(query_w.data() + qlen - next_mum_length, next_mum_length));
 
             std::string_view query_rc_w(query_rc_w_1.data() - next_mum_length, qlen);
-            assert(query_w == reverse_complement(query_rc_w));
+            assert(is_reverse_complement(query_w, query_rc_w));
 
             if (tlen < k || qlen < k)
                 continue;
@@ -868,7 +875,8 @@ void reseed_large_gaps(std::string_view target,
             auto [local_chain, local_chain_score] = chain_ranges(
                 target_w, query_w, query_rc_w, mums, score_model, local_chain_score_model,
                 check_inversions,
-                std::min<size_t>(nthreads, mums.size() * (mums.size() - 1))
+                std::min<size_t>(nthreads, mums.size() * (mums.size() - 1)),
+                show_progress
             );
 
             if (local_chain.empty()) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <ostream>
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+
 
 using Offset = uint64_t;
 using SOffset = std::make_signed_t<Offset>;
@@ -60,9 +62,8 @@ inline char sanitize_nuc(char c) {
     return c;
 }
 
-
-
 std::string reverse_complement(std::string_view fw);
+bool is_reverse_complement(std::string_view fw, std::string_view rc);
 
 inline char orientation_to_char(bool orientation) {
     static const char tab[] = { '+', '-' };
@@ -248,7 +249,7 @@ struct ScoreModel {
         }
 
         if (gap_open2_s + gap_ext2_s > gap_open_s + gap_ext_s) {
-            std::cerr << "NOTE: Swapping O1,E1 and O2,E2\n";
+            std::cerr << "WARNING: Swapping O1,E1 and O2,E2\n";
             std::swap(gap_open_s, gap_open2_s);
             std::swap(gap_ext_s, gap_ext2_s);
         }
@@ -297,7 +298,7 @@ struct ScoreModel {
 
         max_pen = std::max({ mismatch_p, gap_open_p + gap_ext_p, inv_open_p + inv_ext_p });
         if (gap_switch <= 1) {
-            std::cerr << "NOTE: Swapping O1,E1 and O2,E2\n";
+            std::cerr << "WARNING: Swapping O1,E1 and O2,E2\n";
             gap_switch = max_offset;
             std::swap(gap_open_s, gap_open2_s);
             std::swap(gap_ext_s, gap_ext2_s);
