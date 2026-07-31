@@ -28,6 +28,40 @@ static constexpr char NEQ_OP = 'X'; // consumes both
 static constexpr char INV_OP = 'i'; // consumes none, but query should have space for it
 static constexpr char N_OP = '\0';
 
+inline bool consumes_target(char c) {
+    switch (c) {
+        case MATCH_OP:
+        case EQ_OP:
+        case NEQ_OP:
+        case TARGET_CONSUME_OP: { return true; } break;
+        case QUERY_CONSUME_OP:
+        case INV_OP: { return false; } break;
+    }
+
+    std::cerr << "\n\nInvalid CIGAR char\n"
+            << c << "\n\n"
+            << std::endl;
+    assert(false);
+    return false;
+}
+
+inline bool consumes_query(char c) {
+    switch (c) {
+        case MATCH_OP:
+        case EQ_OP:
+        case NEQ_OP:
+        case QUERY_CONSUME_OP: { return true; } break;
+        case TARGET_CONSUME_OP:
+        case INV_OP: { return false; } break;
+    }
+
+    std::cerr << "\n\nInvalid CIGAR char\n"
+            << c << "\n\n"
+            << std::endl;
+    assert(false);
+    return false;
+}
+
 inline void cigar_caller(const std::string& cigar,
                          const std::function<void(char, Offset, Offset, Offset)>& callback,
                          Offset r_len = std::numeric_limits<Offset>::max(),
@@ -270,23 +304,16 @@ inline std::string cigar_fix_n(const std::string& cigar_in,
                     last_op = op;
                 }
             } break;
-            case TARGET_CONSUME_OP: {
+            case TARGET_CONSUME_OP:
+            case QUERY_CONSUME_OP:
+            case INV_OP: {
                 if (snum > 0) {
                     push_op(last_op, snum);
                     snum = 0;
                     last_op = N_OP;
                 }
-                cigar += std::to_string(num) + TARGET_CONSUME_OP;
-                last_op = TARGET_CONSUME_OP;
-            } break;
-            case QUERY_CONSUME_OP: {
-                if (snum > 0) {
-                    push_op(last_op, snum);
-                    snum = 0;
-                    last_op = N_OP;
-                }
-                cigar += std::to_string(num) + QUERY_CONSUME_OP;
-                last_op = QUERY_CONSUME_OP;
+                cigar += std::to_string(num) + c;
+                last_op = c;
             } break;
         }
     }, target.size(), query.size());

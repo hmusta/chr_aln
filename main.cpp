@@ -255,6 +255,7 @@ int main(int argc, char** argv) {
     std::cout << "Use Hamming distance for sequences with fewer than " << larger_gap_cutoff << " mismatches\n";
     std::vector<size_t> larger_gaps;
     size_t nrconsumed = 0;
+    size_t nqconsumed = 0;
     size_t prealigned = 0;
     for (size_t i = 1; i < best_chain.size(); ++i) {
         std::string& local_cigar = cigar_parts[i];
@@ -328,7 +329,8 @@ int main(int argc, char** argv) {
 
             nref[i] = exact_match_length + rlen;
             nquery[i] = exact_match_length + qlen;
-            nrconsumed += exact_match_length + rlen;
+            nrconsumed += nref[i];
+            nqconsumed += nquery[i];
             std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
             ++prealigned;
         } else if (!qorientation_last) {
@@ -338,9 +340,10 @@ int main(int argc, char** argv) {
 
     std::cout << "Pre-aligned " << prealigned << " / " << best_chain.size() << " regions\n";
 
-    ProgressBar progress_bar(target.size() - nrconsumed, "Global alignment");
-    std::mutex mu;
     assert(target.size() >= nrconsumed);
+    assert(query.size() >= nqconsumed);
+    ProgressBar progress_bar(query.size() + target.size() - nrconsumed - nqconsumed, "Global alignment");
+    std::mutex mu;
 
     #pragma omp parallel for schedule(dynamic) num_threads(nthreads)
     for (size_t j = 0; j < larger_gaps.size(); ++j) {
@@ -549,7 +552,7 @@ int main(int argc, char** argv) {
             std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
 
             assert(r_consumed || q_consumed);
-            progress_bar += r_consumed;
+            progress_bar += r_consumed + q_consumed;
 
         } else {
             assert(qorientation);
@@ -614,7 +617,7 @@ int main(int argc, char** argv) {
                 }
                 std::lock_guard<std::mutex> print_lock(mu);
                 std::cout << "Switch run: "
-                          << "i: " << i << " / " << best_chain.size() << "\t"
+                          << "i: " << i << "\t"
                           << "j: " << j << " / " << best_chain.size() << "\t"
                           << "h: " << use_heuristics << "\t"
                           << ti - prev_exact_match_length + 1 << ":"
@@ -684,7 +687,7 @@ int main(int argc, char** argv) {
             std::tie(identities[i], matches[i]) = count_identities_and_matches(cigar_1, r_consumed_1, q_consumed_1);
             std::tie(identities[j], matches[j]) = count_identities_and_matches(cigar_2, r_consumed_2, q_consumed_2);
 
-            progress_bar += r_consumed_1 + r_consumed_2;
+            progress_bar += r_consumed_1 + r_consumed_2 + q_consumed_1 + q_consumed_2;
         }
     }
 
@@ -715,7 +718,30 @@ int main(int argc, char** argv) {
               << "\tfwd nt: " << query.size() - ninv << "\tinv nt: " << ninv << std::endl;
 
     std::string query_prc;
-    std::vector<std::tuple<Offset, Offset, Offset, Offset>> inv_ranges;
+
+    struct InvRange {
+        size_t start_i;
+        Offset r_inv_begin;
+        Offset r_inv_end;
+        Offset q_inv_begin;
+        Offset q_inv_end;
+
+        Offset rsize() const {
+            assert_valid();
+            return r_inv_end - r_inv_begin;
+        }
+
+        Offset qsize() const {
+            assert_valid();
+            return q_inv_end - q_inv_begin;
+        }
+
+        void assert_valid() const {
+            assert(r_inv_begin <= r_inv_end);
+            assert(q_inv_begin <= q_inv_end);
+        }
+    };
+    std::vector<InvRange> inv_ranges;
 
     if (check_inversions) {
         SOffset qi = 0;
@@ -725,7 +751,7 @@ int main(int argc, char** argv) {
         SOffset r_inv_begin = -1;
         SOffset r_inv_end = -1;
         SOffset q_last = 0;
-
+        size_t start_i = inverted.size();
 
         for (size_t i = 0; i < inverted.size(); ++i) {
             const auto& r_consumed = nref[i];
@@ -737,6 +763,7 @@ int main(int argc, char** argv) {
 
             if (ninv > 0 || ninv_r > 0) {
                 if (q_inv_begin == -1 && q_inv_end == -1) {
+                    start_i = i;
                     q_inv_begin = qi + q_consumed - ninv;
                     q_inv_end = q_inv_begin;
                     r_inv_begin = ri + r_consumed - ninv_r;
@@ -748,8 +775,9 @@ int main(int argc, char** argv) {
             } else if (q_inv_begin != -1) {
                 assert(q_inv_end >= q_inv_begin);
                 assert(r_inv_end >= r_inv_begin);
+                assert(start_i < inverted.size());
 
-                inv_ranges.emplace_back(r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
+                inv_ranges.emplace_back(start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
 
                 assert(q_inv_begin >= q_last);
                 query_prc += query.substr(q_last, q_inv_begin - q_last)
@@ -762,6 +790,7 @@ int main(int argc, char** argv) {
                 q_inv_end = -1;
                 r_inv_begin = -1;
                 r_inv_end = -1;
+                start_i = inverted.size();
             }
 
             qi += q_consumed;
@@ -772,8 +801,9 @@ int main(int argc, char** argv) {
             assert(q_inv_end == qi);
             assert(r_inv_begin != -1);
             assert(r_inv_end != -1);
+            assert(start_i < inverted.size());
 
-            inv_ranges.emplace_back(r_inv_begin, ri, q_inv_begin, qi);
+            inv_ranges.emplace_back(start_i, r_inv_begin, ri, q_inv_begin, qi);
 
             assert(q_inv_begin >= q_last);
             assert(q_inv_end >= q_inv_begin);
@@ -787,7 +817,7 @@ int main(int argc, char** argv) {
         assert(query_prc.size() == query.size());
 
         std::cout << "Inversions:";
-        for (const auto &[r_inv_begin, r_inv_end, q_inv_begin, q_inv_end] : inv_ranges) {
+        for (const auto &[start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end] : inv_ranges) {
             assert(is_reverse_complement(std::string_view(query.c_str() + q_inv_begin, q_inv_end - q_inv_begin),
                                          std::string_view(query_prc.c_str() + q_inv_begin, q_inv_end - q_inv_begin)));
             std::cout << "\t" << r_inv_begin + 1 << "-" << r_inv_end << ";" << q_inv_begin + 1 << "-" << q_inv_end;
@@ -887,6 +917,13 @@ int main(int argc, char** argv) {
                     n_longindel_qry += op_len - n;
                 }
                 q_pos += op_len;
+            } break;
+            case INV_OP: {
+                assert(check_inversions);
+                assert(query_prc.size());
+                assert(q_pos + op_len <= query.size());
+                assert(is_reverse_complement(query_check.substr(q_pos, op_len),
+                                             std::string_view(query.c_str() + q_pos, op_len)));
             }
         }
 
@@ -900,12 +937,39 @@ int main(int argc, char** argv) {
         #endif
     };
 
+    auto inv_it = inv_ranges.begin();
     char last_op = N_OP;
     size_t op_len = 0;
+    assert(cigar_parts.size() == inverted.size());
     for (size_t i = 0; i < cigar_parts.size(); ++i) {
+        assert(inv_it == inv_ranges.end() || i <= inv_it->start_i);
         const auto& cigar = cigar_parts[i];
+        Offset base_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
+        Offset base_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
 
-        cigar_caller(cigar, [&](char c, Offset num, Offset /* r_pos */, Offset /* q_pos */) {
+        cigar_caller(cigar, [&](char c, Offset num, Offset rel_r_pos, Offset rel_q_pos) {
+            Offset cur_r_pos = base_r_pos + rel_r_pos;
+            Offset cur_q_pos = base_q_pos + rel_q_pos;
+            assert(r_pos + op_len * (last_op == N_OP || consumes_target(last_op)) == cur_r_pos);
+            assert(q_pos + op_len * (last_op == N_OP || consumes_query(last_op)) == cur_q_pos);
+
+            if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
+                assert(cur_r_pos <= inv_it->r_inv_begin);
+                assert(cur_q_pos <= inv_it->q_inv_begin);
+                if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
+                    assert(last_op != INV_OP);
+                    if (last_op != N_OP)
+                        push_op(last_op, op_len);
+
+                    assert(cur_r_pos == r_pos);
+                    assert(cur_q_pos == q_pos);
+
+                    // mark an inversion
+                    last_op = INV_OP;
+                    op_len = inv_it->qsize();
+                    ++inv_it;
+                }
+            }
             if (c != last_op) {
                 if (last_op != N_OP)
                     push_op(last_op, op_len);
@@ -916,12 +980,35 @@ int main(int argc, char** argv) {
                 op_len += num;
             }
         });
+
+        Offset cur_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
+        Offset cur_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
+        if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
+            assert(cur_r_pos <= inv_it->r_inv_begin);
+            assert(cur_q_pos <= inv_it->q_inv_begin);
+            if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
+                assert(last_op != INV_OP);
+                if (last_op != N_OP)
+                    push_op(last_op, op_len);
+
+                assert(cur_r_pos == r_pos);
+                assert(cur_q_pos == q_pos);
+
+                // mark an inversion
+                last_op = INV_OP;
+                op_len = inv_it->qsize();
+                ++inv_it;
+            }
+        }
+
+        assert(inv_it == inv_ranges.end() || i < inv_it->start_i);
     }
 
     if (last_op != N_OP)
         push_op(last_op, op_len);
 
     std::cout << std::endl;
+    assert(inv_it == inv_ranges.end());
     assert(final_cigar == cigar_fix_n(final_cigar, target, query_check));
 
     std::cout << neq << " " << nmatch << " " << n_ref << " " << n_qry << " " << n_longindel_ref << " " << n_longindel_qry << "\n";

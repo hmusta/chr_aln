@@ -882,6 +882,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_1 += breakpoints.q1_left_gap;
         }
 
+        assert(cigar_1
+            == cigar_fix_n(cigar_1, target_1.substr(0, r_consumed_1), query_1.substr(0, q_consumed_1)));
+
         r_consumed_1_bw = breakpoints.get_t1_bw(target_1).size();
         q_consumed_1_bw = breakpoints.get_q1_bw(query_rc_1).size();
         std::tie(score_1_bw, cigar_1_bw) = align_segment(
@@ -901,6 +904,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             score_1_bw += score_model.get_gap_score(breakpoints.q2_left_gap) + score_model.inv_ext_s * breakpoints.q2_left_gap;
             q_consumed_1_bw += breakpoints.q2_left_gap;
         }
+
+        assert(cigar_1_bw
+            == cigar_fix_n(cigar_1_bw, target_1.substr(r_consumed_1), query_rc_1.substr(query_rc_1.size() - q_consumed_1_bw)));
 
         r_consumed_2 = breakpoints.get_t2_fw(target_2).size();
         q_consumed_2 = breakpoints.get_q2_fw(query_2).size();
@@ -924,6 +930,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_2 += breakpoints.q1_right_gap;
         }
 
+        assert(cigar_2
+            == cigar_fix_n(cigar_2, target_2.substr(0, r_consumed_2), query_2.substr(0, q_consumed_2)));
+
         r_consumed_2_bw = breakpoints.get_t2_bw(target_2).size();
         q_consumed_2_bw = breakpoints.get_q2_bw(query_rc_2).size();
         std::tie(score_2_bw, cigar_2_bw) = align_segment(
@@ -943,6 +952,9 @@ get_alignment_cigars(wfa::WFAligner& aligner,
             q_consumed_2_bw += breakpoints.q2_right_gap;
         }
 
+        assert(cigar_2_bw
+            == cigar_fix_n(cigar_2_bw, target_2.substr(r_consumed_2), query_rc_2.substr(query_rc_2.size() - q_consumed_2_bw)));
+
         assert(r_consumed_1 + r_consumed_1_bw == target_1.size());
         assert(r_consumed_2 + r_consumed_2_bw == target_2.size());
         assert(q_consumed_1 + q_consumed_2 == query_1.size());
@@ -950,14 +962,8 @@ get_alignment_cigars(wfa::WFAligner& aligner,
     }
 
     cigar_1 += std::move(cigar_1_bw);
-    std::string query_1_cat = std::string(query_1.substr(0, q_consumed_1))
-                                + std::string(query_rc_1.substr(query_rc_1.size() - q_consumed_1_bw));
-    cigar_1 = cigar_fix_n(cigar_1, target_1, query_1_cat);
 
     cigar_2 += std::move(cigar_2_bw);
-    std::string query_2_cat = std::string(query_2.substr(0, q_consumed_2))
-                                + std::string(query_rc_2.substr(query_rc_2.size() - q_consumed_2_bw));
-    cigar_2 = cigar_fix_n(cigar_2, target_2, query_2_cat);
 
     return std::make_tuple(
         score_1_fw + score_model.inv_open_s + score_1_bw,
