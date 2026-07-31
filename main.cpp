@@ -567,6 +567,8 @@ int main(int argc, char** argv) {
                                                  inv_ends[i],
                                                  inv_ends[i] + 1);
             assert(ql_1 != qorientation);
+            assert(target.c_str() + ti_1 == target_w_1.data());
+            assert(query.c_str() + qi_1 == query_w_1.data());
 
             assert(i < inv_ends.size());
             size_t j = inv_ends[i] + 1;
@@ -580,6 +582,7 @@ int main(int argc, char** argv) {
                                                 inv_ends[i],
                                                 inv_ends[i] + 1);
             assert(ql_2 == qorientation);
+            assert(target.c_str() + ti_2 == target_w_2.data());
 
             assert(query_w_1.size() == query_w_2.size());
             assert(query_rc_w_1.size() == query_rc_w_2.size());
@@ -744,76 +747,123 @@ int main(int argc, char** argv) {
     std::vector<InvRange> inv_ranges;
 
     if (check_inversions) {
-        SOffset qi = 0;
         SOffset q_inv_begin = -1;
         SOffset q_inv_end = -1;
-        SOffset ri = 0;
+        const char* q_inv_data = nullptr;
         SOffset r_inv_begin = -1;
         SOffset r_inv_end = -1;
-        SOffset q_last = 0;
         size_t start_i = inverted.size();
+        size_t last_end_i = 0;
 
-        for (size_t i = 0; i < inverted.size(); ++i) {
-            const auto& r_consumed = nref[i];
-            const auto& q_consumed = nquery[i];
-            const auto& ninv = inverted[i];
-            const auto& ninv_r = inverted_r[i];
-            assert(ninv <= q_consumed);
-            assert(ninv_r <= r_consumed);
+        for (size_t i = 1; i < best_chain.size(); ++i) {
+            if (best_chain[i].qorientation && !best_chain[i - 1].qorientation) {
+                assert(q_inv_begin == -1);
+                assert(q_inv_end == -1);
+                assert(q_inv_data == nullptr);
+                assert(r_inv_begin == -1);
+                assert(r_inv_end == -1);
+                assert(start_i == inverted.size());
+                assert(i == inv_starts[i]);
+                assert(inverted[i]);
+                assert(inverted_r[i]);
 
-            if (ninv > 0 || ninv_r > 0) {
-                if (q_inv_begin == -1 && q_inv_end == -1) {
-                    start_i = i;
-                    q_inv_begin = qi + q_consumed - ninv;
-                    q_inv_end = q_inv_begin;
-                    r_inv_begin = ri + r_consumed - ninv_r;
-                    r_inv_end = r_inv_begin;
-                }
+                assert(std::accumulate(inverted.begin() + last_end_i,
+                                       inverted.begin() + i,
+                                       size_t(0)) == 0);
+                assert(std::accumulate(inverted_r.begin() + last_end_i,
+                                       inverted_r.begin() + i,
+                                       size_t(0)) == 0);
 
-                q_inv_end += ninv;
-                r_inv_end += ninv_r;
-            } else if (q_inv_begin != -1) {
-                assert(q_inv_end >= q_inv_begin);
-                assert(r_inv_end >= r_inv_begin);
-                assert(start_i < inverted.size());
+                start_i = i;
+                auto [ql_1, query_w_1, query_rc_w_1, target_w_1, mum_length_1, qi_1, ti_1, eml_1]
+                    = extract_gap_seqs_switch<false>(target, query, query_rc,
+                                                    best_chain,
+                                                    inv_starts[start_i] - 1,
+                                                    inv_starts[start_i],
+                                                    inv_ends[start_i],
+                                                    inv_ends[start_i] + 1);
+                assert(!ql_1);
+                assert(ti_1 == target_w_1.data() - target.c_str());
+                assert(qi_1 == query_w_1.data() - query.c_str());
+
+                q_inv_begin = qi_1 + nquery[start_i] - inverted[start_i];
+                r_inv_begin = ti_1 + nref[start_i] - inverted_r[start_i];
+
+                q_inv_data = query_rc_w_1.data() + query_rc_w_1.size() + eml_1 - inverted[start_i];
+
+                assert(target_w_1.data() + nref[start_i] - inverted_r[start_i]
+                        == target.c_str() + r_inv_begin);
+                assert(query_w_1.data() + nquery[start_i] - inverted[start_i]
+                        == query.c_str() + q_inv_begin);
+            } else if (!best_chain[i].qorientation && best_chain[i - 1].qorientation) {
+                assert(q_inv_begin != -1);
+                assert(q_inv_end == -1);
+                assert(q_inv_data != nullptr);
+                assert(r_inv_begin != -1);
+                assert(r_inv_end == -1);
+                assert(start_i < i);
+                assert(i == inv_ends[start_i] + 1);
+                assert(i == inv_ends[i - 1] + 1);
+
+                auto [ql_2, query_w_2, query_rc_w_2, target_w_2, mum_length_2, qi_2, ti_2, eml_2]
+                    = extract_gap_seqs_switch<true>(target, query, query_rc,
+                                                    best_chain,
+                                                    inv_starts[start_i] - 1,
+                                                    inv_starts[start_i],
+                                                    inv_ends[start_i],
+                                                    inv_ends[start_i] + 1);
+                assert(ql_2);
+                assert(ti_2 == target_w_2.data() - target.c_str());
+
+                q_inv_end = query_rc_w_2.data() - query.c_str() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1]);
+                r_inv_end = ti_2 + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1]);
+
+                assert(target_w_2.data() + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1])
+                        == target.c_str() + r_inv_end);
+                assert(query_rc_w_2.data() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1])
+                        == query.c_str() + q_inv_end);
+
+                last_end_i = i + 1;
+                size_t inv_len = q_inv_end - q_inv_begin;
+                assert(std::accumulate(inverted.begin() + start_i,
+                                       inverted.begin() + last_end_i,
+                                       size_t(0)) == inv_len);
+                assert(std::accumulate(inverted_r.begin() + start_i,
+                                       inverted_r.begin() + last_end_i,
+                                       SOffset(0)) == r_inv_end - r_inv_begin);
+
+                std::string_view q_inv_window(q_inv_data, inv_len);
+                assert(q_inv_data + inv_len == query_w_2.data() + inverted[inv_ends[start_i] + 1]);
+                assert(is_reverse_complement(q_inv_window, std::string_view(query.c_str() + q_inv_begin, inv_len)));
 
                 inv_ranges.emplace_back(start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
-
-                assert(q_inv_begin >= q_last);
-                query_prc += query.substr(q_last, q_inv_begin - q_last)
-                            + reverse_complement(query.substr(q_inv_begin, q_inv_end - q_inv_begin))
-                            + query.substr(q_inv_end, qi + q_consumed - q_inv_end);
-                q_last = qi + q_consumed;
-                assert(static_cast<SOffset>(query_prc.size()) == q_last);
+                assert(static_cast<Offset>(q_inv_begin) >= query_prc.size());
+                query_prc += query.substr(query_prc.size(), q_inv_begin - query_prc.size())
+                                + std::string(q_inv_window);
 
                 q_inv_begin = -1;
                 q_inv_end = -1;
+                q_inv_data = nullptr;
                 r_inv_begin = -1;
                 r_inv_end = -1;
                 start_i = inverted.size();
             }
-
-            qi += q_consumed;
-            ri += r_consumed;
         }
 
-        if (q_inv_begin != -1) {
-            assert(q_inv_end == qi);
-            assert(r_inv_begin != -1);
-            assert(r_inv_end != -1);
-            assert(start_i < inverted.size());
+        assert(q_inv_begin == -1);
+        assert(q_inv_end == -1);
+        assert(q_inv_data == nullptr);
+        assert(r_inv_begin == -1);
+        assert(r_inv_end == -1);
+        assert(start_i == inverted.size());
+        assert(std::accumulate(inverted.begin() + last_end_i,
+                               inverted.end(),
+                               size_t(0)) == 0);
+        assert(std::accumulate(inverted_r.begin() + last_end_i,
+                               inverted_r.end(),
+                               size_t(0)) == 0);
 
-            inv_ranges.emplace_back(start_i, r_inv_begin, ri, q_inv_begin, qi);
-
-            assert(q_inv_begin >= q_last);
-            assert(q_inv_end >= q_inv_begin);
-            query_prc += query.substr(q_last, q_inv_begin - q_last)
-                        + reverse_complement(query.substr(q_inv_begin, qi - q_inv_begin));
-            assert(query_prc.size() == query.size());
-            q_last = qi;
-        }
-
-        query_prc += query.substr(q_last);
+        query_prc += query.substr(query_prc.size());
         assert(query_prc.size() == query.size());
 
         std::cout << "Inversions:";
