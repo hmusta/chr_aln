@@ -54,6 +54,10 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
             std::string_view query_header(line.c_str() + 2,
                                           !is_rev ? line.size() - 2 : rev_idx - 3);
             assert(query_header == theader || query_header == qheader);
+            #ifdef NDEBUG
+            std::ignore = theader;
+            std::ignore = qheader;
+            #endif
             if (is_rev)
                 qrc = true;
 
@@ -85,6 +89,11 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
 
             output.emplace_back(rbegin, rbegin + len, false, qbegin, qbegin + len, qrc);
             assert(output.back().check_equal(target, query, query_rc));
+            #ifdef NDEBUG
+            std::ignore = target;
+            std::ignore = query;
+            std::ignore = query_rc;
+            #endif
         };
 
         std::istringstream sin(line);

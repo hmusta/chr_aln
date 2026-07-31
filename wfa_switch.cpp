@@ -249,6 +249,13 @@ void update_breakpoints(wfa::WFAligner& aligner,
         assert(q1 + q1p + q1_left_gap + q1_right_gap  == q1_max);
         assert(q2 + q2p + q2_left_gap + q2_right_gap  == q2_max);
 
+        #ifdef NDEBUG
+        std::ignore = q1p;
+        std::ignore = q2p;
+        std::ignore = t1p;
+        std::ignore = t2p;
+        #endif
+
         if (update_p >= breakpoints.min_p)
             return;
 

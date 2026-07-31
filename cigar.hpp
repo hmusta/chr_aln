@@ -125,6 +125,11 @@ inline void cigar_caller(const std::string& cigar,
     assert(num == 0);
     assert(r_len == std::numeric_limits<Offset>::max() || r_len == r_pos);
     assert(q_len == std::numeric_limits<Offset>::max() || q_len == q_pos);
+
+    #ifdef NDEBUG
+    std::ignore = r_len;
+    std::ignore = q_len;
+    #endif
 }
 
 inline std::pair<int64_t, int64_t> count_identities_and_matches(const std::string& cigar,
@@ -154,6 +159,10 @@ inline Score score_cigar(const std::string& cigar,
     cigar_caller(cigar, [&](char c, Offset num, Offset r_pos, Offset q_pos) {
         assert(it_q == query.begin() + q_pos);
         assert(it_r == target.begin() + r_pos);
+        #ifdef NDEBUG
+        std::ignore = q_pos;
+        std::ignore = r_pos;
+        #endif
         switch (c) {
             case MATCH_OP: {
                 if (!penalty)

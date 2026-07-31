@@ -753,7 +753,10 @@ int main(int argc, char** argv) {
         SOffset r_inv_begin = -1;
         SOffset r_inv_end = -1;
         size_t start_i = inverted.size();
+
+        #ifndef NDEBUG
         size_t last_end_i = 0;
+        #endif
 
         for (size_t i = 1; i < best_chain.size(); ++i) {
             if (best_chain[i].qorientation && !best_chain[i - 1].qorientation) {
@@ -823,8 +826,10 @@ int main(int argc, char** argv) {
                 assert(query_rc_w_2.data() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1])
                         == query.c_str() + q_inv_end);
 
-                last_end_i = i + 1;
                 size_t inv_len = q_inv_end - q_inv_begin;
+                #ifndef NDEBUG
+                last_end_i = i + 1;
+                #endif
                 assert(std::accumulate(inverted.begin() + start_i,
                                        inverted.begin() + last_end_i,
                                        size_t(0)) == inv_len);

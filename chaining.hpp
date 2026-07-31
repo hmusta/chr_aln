@@ -60,6 +60,10 @@ struct Ranges {
         assert(qbegin <= qend);
         assert(allow_empty || qbegin < qend);
         assert(rend - rbegin == qend - qbegin);
+
+        #ifdef NDEBUG
+        std::ignore = allow_empty;
+        #endif
     }
 
     void shift_start(size_t target_shift, size_t query_shift) {

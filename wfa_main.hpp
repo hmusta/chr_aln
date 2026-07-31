@@ -109,6 +109,10 @@ inline void check_entry(Offset qlen, Offset tlen, const Elements &entry) {
         assert(static_cast<SOffset>(q_del_i) + diag >= 0);
         assert(q_del_i + diag <= tlen);
     }
+    #else
+    std::ignore = qlen;
+    std::ignore = tlen;
+    std::ignore = entry;
     #endif
 }
 
