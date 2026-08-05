@@ -372,10 +372,14 @@ class WFAIterator {
     }
 };
 
-std::tuple<Score, std::string, SOffset, SOffset, SOffset, SOffset,
-           Score, std::string, SOffset, SOffset, SOffset, SOffset>
+std::tuple<Score, Cigar, SOffset, SOffset, SOffset, SOffset,
+           Score, Cigar, SOffset, SOffset, SOffset, SOffset,
+           SOffset, SOffset>
 run_alignment(wfa::WFAligner& aligner,
               const ScoreModel &score_model,
+              std::string_view query,
+              std::string_view query_rc,
+              std::string_view target,
               std::string_view query_1,
               std::string_view query_rc_1,
               std::string_view target_1,

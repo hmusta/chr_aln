@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chaining.hpp"
+#include "cigar.hpp"
 
 #include <functional>
 #include <string>
@@ -8,7 +9,7 @@
 
 #include <bindings/cpp/WFAligner.hpp>
 
-std::string repeat_aligner(const std::string &query, const std::string &target);
+Cigar repeat_aligner(const std::string &query, const std::string &target);
 
 void call_mums(std::string_view query,
                std::string_view query_rc,
@@ -22,7 +23,7 @@ void call_mums(std::string_view query,
                SOffset tbegin = 0,
                SOffset tend = -1);
 
-std::pair<Score, std::string>
+std::pair<Score, Cigar>
 get_alignment(wfa::WFAligner& aligner,
                 const ScoreModel &score_model,
                 std::string_view query,

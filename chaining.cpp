@@ -638,6 +638,9 @@ void reseed_large_gaps(std::string_view target,
             auto [qorientation_last, query_w, target_w, mum_length, qi, ti, exact_match_length]
                     = extract_gap_seqs_continue(target, query, query_rc, best_chain, i);
 
+            assert(ti == best_chain[i - 1].rend);
+            assert(qi == best_chain[i - 1].qend);
+
             if (!check_if_heuristics(query_w.size(), target_w.size()))
                 continue;
 
@@ -693,6 +696,13 @@ void reseed_large_gaps(std::string_view target,
 
             assert(local_chain.size() > 2);
 
+            local_chain[0].shift_start(ti, qi);
+            local_chain.back().shift_start(ti, qi);
+            assert(best_chain[i - 1].rend == local_chain[0].rbegin);
+            assert(best_chain[i - 1].qend == local_chain[0].qbegin);
+            assert(best_chain[i].rbegin == local_chain.back().rend);
+            assert(best_chain[i].qbegin == local_chain.back().qend);
+
             auto jt_b = local_chain.begin() + 1;
             auto jt_e = local_chain.end() - 1;
             assert(jt_b < jt_e);
@@ -707,7 +717,9 @@ void reseed_large_gaps(std::string_view target,
             });
 
             assert(best_chain[i - 1].rend < jt_b->rend);
-            assert((jt_e - 1)->rend < best_chain[i].rend);
+            assert(best_chain[i - 1].qend < jt_b->qend);
+            assert(best_chain[i].size() == 0 || (jt_e - 1)->rend < best_chain[i].rend);
+            assert(best_chain[i].size() == 0 || (jt_e - 1)->qend < best_chain[i].qend);
 
             size_t new_anchor_count = std::distance(jt_b, jt_e);
 

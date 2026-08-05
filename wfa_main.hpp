@@ -707,11 +707,11 @@ inline std::vector<std::pair<SOffset, SOffset>> get_ns(std::string_view seq) {
     return n_coords;
 }
 
-inline std::pair<std::string, Score>
+inline std::pair<Cigar, Score>
 run_alignment_gaps(wfa::WFAligner& aligner,
-                                      std::string_view query,
-                                      std::string_view target,
-                                      const ScoreModel &score_model) {
+                    std::string_view query,
+                    std::string_view target,
+                    const ScoreModel &score_model) {
     check_lengths(aligner, score_model.max_pen, query.size() + target.size());
     std::vector<std::pair<SOffset, SOffset>> query_n_coords = get_ns(query);
     std::vector<std::pair<SOffset, SOffset>> target_n_coords = get_ns(target);
@@ -720,12 +720,12 @@ run_alignment_gaps(wfa::WFAligner& aligner,
         std::cout << "Defaulting to WFA2-lib\n";
         SeqPair view_pair(query, target);
         aligner.alignEnd2End(match_char, &view_pair, query.size(), target.size());
-        std::string cigar = cigar_fix_n(aligner.getCIGAR(true), target, query);
+        Cigar cigar = cigar_fix_n(aligner.getCIGAR(true), target, query);
         Score aln_score = score_cigar(cigar, view_pair, score_model);
         return std::make_pair(cigar, aln_score);
     }
 
-    std::string cigar;
+    Cigar cigar;
 
     SOffset query_gap_begin = query_n_coords.size() ? query_n_coords[0].first : query.size();
     SOffset query_gap_end = query_n_coords.size() ? query_n_coords[0].second : query.size();
@@ -817,7 +817,7 @@ run_alignment_gaps(wfa::WFAligner& aligner,
         }
         #endif
         std::cout << "Then gap of length " << taken_gaps << "\n";
-        cigar += std::to_string(taken_gaps) + MATCH_OP;
+        cigar.push(MATCH_OP, taken_gaps);
 
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query.substr(0, qi), target.substr(0, ti)), score_model);
@@ -833,14 +833,14 @@ run_alignment_gaps(wfa::WFAligner& aligner,
 
     if (query_left == 0 && target_left > 0) {
         std::cout << "Final insertion of length " << target_left << "\n";
-        cigar += std::to_string(target_left) + TARGET_CONSUME_OP;
+        cigar.push(TARGET_CONSUME_OP, target_left);
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query, target), score_model);
         std::cout << "Score so far score " << score << "\n";
         #endif
     } else if (query_left > 0 && target_left == 0) {
         std::cout << "Final deletion of length " << query_left << "\n";
-        cigar += std::to_string(query_left) + QUERY_CONSUME_OP;
+        cigar.push(QUERY_CONSUME_OP, query_left);
         #ifndef NDEBUG
         Score score = score_cigar(cigar, SeqPair(query, target), score_model);
         std::cout << "Score so far score " << score << "\n";
@@ -852,12 +852,12 @@ run_alignment_gaps(wfa::WFAligner& aligner,
                           std::string_view(target.data() + ti, target_left));
         aligner.alignEnd2End(match_char, &view_pair, view_pair.first.size(),
                              view_pair.second.size());
-        std::string last_cigar = cigar_fix_n(aligner.getCIGAR(true), view_pair.second, view_pair.first);
+        Cigar last_cigar = cigar_fix_n(Cigar(aligner.getCIGAR(true)), view_pair.second, view_pair.first);
         #ifndef NDEBUG
         Score score = score_cigar(last_cigar, view_pair, score_model);
         std::cout << "\twith score " << score << "\n";
         #endif
-        cigar += std::move(last_cigar);
+        cigar.insert(cigar.end(), std::make_move_iterator(last_cigar.begin()), std::make_move_iterator(last_cigar.end()));
     }
 
     Score aln_score = score_cigar(cigar, SeqPair(query, target), score_model);

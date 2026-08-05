@@ -5,7 +5,7 @@
 #include <mummer/sparseSA.hpp>
 #include <tandem_aligner.hpp>
 
-std::pair<Score, std::string>
+std::pair<Score, Cigar>
 get_alignment(wfa::WFAligner& aligner,
                 const ScoreModel &score_model,
                 std::string_view query,
@@ -16,7 +16,7 @@ get_alignment(wfa::WFAligner& aligner,
                 Diag max_k) {
     SeqPair view_pair(query, target);
     Score n_penalty = INT32_MIN;
-    std::string cigar;
+    Cigar cigar;
     if (query.size() && target.size()) {
         if (static_cast<SOffset>(query.size() + target.size()) >= heuristics_length_cutoff) {
             cigar = repeat_aligner(std::string(query), std::string(target));
@@ -37,17 +37,17 @@ get_alignment(wfa::WFAligner& aligner,
             assert(aligner.getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
             n_penalty = aligner.getAlignmentScore();
             std::string base_cigar = aligner.getCIGAR(true);
-            cigar = cigar_fix_n(base_cigar, target, query);
+            cigar = cigar_fix_n(Cigar(base_cigar), target, query);
         }
     } else if (query.size()) {
-        cigar = std::to_string(query.size()) + QUERY_CONSUME_OP;
+        cigar = Cigar(QUERY_CONSUME_OP, query.size());
     } else if (target.size()) {
-        cigar = std::to_string(target.size()) + TARGET_CONSUME_OP;
+        cigar = Cigar(TARGET_CONSUME_OP, target.size());
     } else {
         n_penalty = 0;
     }
 
-    assert((query.empty() && target.empty()) || cigar.size());
+    assert((query.empty() && target.empty()) || !cigar.empty());
     assert(cigar == cigar_fix_n(cigar, target, query));
     Score score;
     if (n_penalty != INT32_MIN) {
@@ -61,7 +61,7 @@ get_alignment(wfa::WFAligner& aligner,
     return std::make_pair(score, std::move(cigar));
 }
 
-std::string repeat_aligner(const std::string &query,
+Cigar repeat_aligner(const std::string &query,
                            const std::string &target) {
     tandem_aligner::Cigar ta_cigar;
     std::queue<tandem_aligner::MinSeqTask> queue;
@@ -95,7 +95,7 @@ std::string repeat_aligner(const std::string &query,
 
     std::ostringstream sout;
     sout << ta_cigar;
-    return cigar_fix_n(sout.str(), target, query);
+    return cigar_fix_n(Cigar(sout.str()), target, query);
 }
 
 void call_mums(std::string_view query,

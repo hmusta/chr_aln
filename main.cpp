@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
     auto init_storage = [&]() {
         return std::make_tuple(std::vector<std::tuple<int64_t, uint64_t, uint64_t>>(
                                        best_chain.size()),
-                               std::vector<std::string>(best_chain.size()),
+                               std::vector<Cigar>(best_chain.size()),
                                std::vector<Score>(best_chain.size()),
                                std::vector<int64_t>(best_chain.size()),
                                std::vector<int64_t>(best_chain.size()),
@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
     size_t nqconsumed = 0;
     size_t prealigned = 0;
     for (size_t i = 1; i < best_chain.size(); ++i) {
-        std::string& local_cigar = cigar_parts[i];
+        Cigar& local_cigar = cigar_parts[i];
         Score& local_score = scores[i];
         bool qorientation_last = best_chain[i - 1].qorientation;
         bool qorientation = best_chain[i].qorientation;
@@ -293,7 +293,7 @@ int main(int argc, char** argv) {
                             break;
                         }
                         local_score += (last_op == NEQ_OP ? score_model.mismatch_s : score_model.match_s) * num;
-                        local_cigar += std::to_string(num) + last_op;
+                        local_cigar.push(last_op, num);
                         num = 0;
                     }
                     last_op = cur_op;
@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
                 assert(last_op != N_OP);
                 nmismatch += last_op == NEQ_OP ? num : 0;
                 local_score += (last_op == NEQ_OP ? score_model.mismatch_s : score_model.match_s) * num;
-                local_cigar += std::to_string(num) + last_op;
+                local_cigar.push(last_op, num);
             }
             if (nmismatch >= larger_gap_cutoff) {
                 local_score = 0;
@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
 
             if (exact_match_length) {
                 local_score += exact_match_length * score_model.match_s;
-                local_cigar += std::to_string(exact_match_length) + EQ_OP;
+                local_cigar.push(EQ_OP, exact_match_length);
 
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * exact_match_length;
@@ -331,7 +331,7 @@ int main(int argc, char** argv) {
             nquery[i] = exact_match_length + qlen;
             nrconsumed += nref[i];
             nqconsumed += nquery[i];
-            std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
+            // std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
             ++prealigned;
         } else if (!qorientation_last) {
             larger_gaps.emplace_back(i);
@@ -350,7 +350,7 @@ int main(int argc, char** argv) {
         size_t i = larger_gaps[j];
         assert(i);
 
-        std::string& local_cigar = cigar_parts[i];
+        Cigar& local_cigar = cigar_parts[i];
         Score& local_score = scores[i];
         auto& [gap_length, gap_pos_r, gap_pos_q] = longest_gaps[i];
 
@@ -375,8 +375,7 @@ int main(int argc, char** argv) {
             ti += skipped;
             assert(local_cigar.empty());
             if (skipped) {
-                local_cigar += std::to_string(skipped);
-                local_cigar += MATCH_OP;
+                local_cigar.push(MATCH_OP, skipped);
             }
 
             Score front_eq = std::mismatch(query_w.begin(), query_w.end(), target_w.begin(), target_w.end()).first - query_w.begin();
@@ -385,7 +384,7 @@ int main(int argc, char** argv) {
                 target_w.remove_prefix(front_eq);
                 qi += front_eq;
                 ti += front_eq;
-                local_cigar += std::to_string(front_eq) + EQ_OP;
+                local_cigar.push(EQ_OP, front_eq);
             }
 
             size_t back_skipped = 0;
@@ -431,7 +430,7 @@ int main(int argc, char** argv) {
             if (target_w.empty()) {
                 assert(query_w.size());
                 local_score += score_model.get_gap_score(query_w.size());
-                local_cigar += std::to_string(query_w.size()) + QUERY_CONSUME_OP;
+                local_cigar.push(QUERY_CONSUME_OP, query_w.size());
                 gap_length = query_w.size();
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * static_cast<Score>(query_w.size());
@@ -439,7 +438,7 @@ int main(int argc, char** argv) {
             } else if (query_w.empty()) {
                 assert(target_w.size());
                 local_score += score_model.get_gap_score(target_w.size());
-                local_cigar += std::to_string(target_w.size()) + TARGET_CONSUME_OP;
+                local_cigar.push(TARGET_CONSUME_OP, target_w.size());
                 gap_length = target_w.size();
             } else {
                 use_heuristics = check_if_heuristics(query_w.size(), target_w.size());
@@ -459,9 +458,10 @@ int main(int argc, char** argv) {
 
                     auto [cigar, aln_score] = run_alignment_gaps(*aligner, query_w, target_w, score_model);
                     local_score += aln_score;
-                    local_cigar += std::move(cigar);
+                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                 } else if (use_heuristics) {
-                    local_cigar += repeat_aligner(std::string(query_w), std::string(target_w));
+                    Cigar cigar = repeat_aligner(std::string(query_w), std::string(target_w));
+                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                     SeqPair view_pair(query_w, target_w);
                     local_score += score_cigar(local_cigar, view_pair, score_model);
                 } else {
@@ -484,14 +484,14 @@ int main(int argc, char** argv) {
                     assert(aligner->getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
 
                     Score aln_score = 0;
-                    std::string wfa_cigar = aligner->getCIGAR(true);
-                    std::string cigar = cigar_fix_n(wfa_cigar, target_w, query_w);
+                    Cigar wfa_cigar = aligner->getCIGAR(true);
+                    Cigar cigar = cigar_fix_n(wfa_cigar, target_w, query_w);
                     aln_score = score_cigar(cigar, view_pair, score_model);
 
                     assert(aln_score == score_cigar(cigar, view_pair, score_model));
 
                     local_score += aln_score;
-                    local_cigar += std::move(cigar);
+                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                 }
             }
 
@@ -502,10 +502,9 @@ int main(int argc, char** argv) {
                           << " to " << ti + 1 << "-" << ti + target_w.size() << " x "
                           << qi + 1 << "-" << qi + query_w.size() << "\n\n"
                           << std::endl;
-                if (back_skipped) {
-                    local_cigar += std::to_string(back_skipped);
-                    local_cigar += MATCH_OP;
-                }
+
+                if (back_skipped)
+                    local_cigar.push(MATCH_OP, back_skipped);
             }
 
             if (to_print)
@@ -532,8 +531,7 @@ int main(int argc, char** argv) {
 
             if (exact_match_length) {
                 local_score += exact_match_length * score_model.match_s;
-                local_cigar += std::to_string(exact_match_length);
-                local_cigar += EQ_OP;
+                local_cigar.push(EQ_OP, exact_match_length);
 
                 if (qorientation) {
                     local_score += score_model.inv_ext_s * exact_match_length;
@@ -549,7 +547,7 @@ int main(int argc, char** argv) {
             nref[i] = r_consumed;
             nquery[i] = q_consumed;
 
-            std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
+            // std::tie(identities[i], matches[i]) = count_identities_and_matches(local_cigar, nref[i], nquery[i]);
 
             assert(r_consumed || q_consumed);
             progress_bar += r_consumed + q_consumed;
@@ -647,8 +645,8 @@ int main(int argc, char** argv) {
             Score &score_1 = scores[i];
             Score &score_2 = scores[j];
 
-            std::string &cigar_1 = cigar_parts[i];
-            std::string &cigar_2 = cigar_parts[j];
+            Cigar &cigar_1 = cigar_parts[i];
+            Cigar &cigar_2 = cigar_parts[j];
 
             auto &inv_length_1 = inverted[i];
             auto &inv_length_2 = inverted[j];
@@ -658,9 +656,14 @@ int main(int argc, char** argv) {
             auto &q_consumed_1 = nquery[i];
             auto &q_consumed_2 = nquery[j];
 
+            SOffset inv_len;
+            SOffset inv_len_r;
+
             std::tie(score_1, cigar_1, r_consumed_1, q_consumed_1, inv_length_1, inv_length_r_1,
-                     score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2)
+                     score_2, cigar_2, r_consumed_2, q_consumed_2, inv_length_2, inv_length_r_2,
+                     inv_len, inv_len_r)
                 = run_alignment(*aligner, score_model,
+                                query, query_rc, target,
                                 query_w_1, query_rc_w_1, target_w_1,
                                 query_w_2, query_rc_w_2, target_w_2,
                                 heuristics_length_cutoff,
@@ -676,215 +679,232 @@ int main(int argc, char** argv) {
             score_2 += score_model.match_s * eml_2;
 
             inv_length_1 += eml_1;
+            assert(inv_len >= inv_length_1 + inv_length_2);
+
             inv_length_r_1 += eml_1;
+            assert(inv_len_r >= inv_length_r_1 + inv_length_r_2);
 
             if (eml_1)
-                cigar_1 += std::to_string(eml_1) + EQ_OP;
+                cigar_1.push(EQ_OP, eml_1);
 
             if (eml_2)
-                cigar_2 += std::to_string(eml_2) + EQ_OP;
+                cigar_2.push(EQ_OP, eml_2);
 
             if (to_print)
                 print();
 
-            std::tie(identities[i], matches[i]) = count_identities_and_matches(cigar_1, r_consumed_1, q_consumed_1);
-            std::tie(identities[j], matches[j]) = count_identities_and_matches(cigar_2, r_consumed_2, q_consumed_2);
+            // std::tie(identities[i], matches[i]) = count_identities_and_matches(cigar_1, r_consumed_1, q_consumed_1);
+            // std::tie(identities[j], matches[j]) = count_identities_and_matches(cigar_2, r_consumed_2, q_consumed_2);
 
             progress_bar += r_consumed_1 + r_consumed_2 + q_consumed_1 + q_consumed_2;
         }
     }
 
-    Score score = std::accumulate(scores.begin(), scores.end(), Score(0ll));
+    // Score score = std::accumulate(scores.begin(), scores.end(), Score(0ll));
 
-    int64_t identity = std::accumulate(identities.begin(), identities.end(), 0ll);
-    assert(identity <= std::min<int64_t>(query.size(), target.size()));
+    // int64_t identity = std::accumulate(identities.begin(), identities.end(), 0ll);
+    // assert(identity <= std::min<int64_t>(query.size(), target.size()));
 
-    int64_t total_matches = std::accumulate(matches.begin(), matches.end(), 0ll);
-    assert(total_matches <= std::min<int64_t>(query.size(), target.size()));
+    // int64_t total_matches = std::accumulate(matches.begin(), matches.end(), 0ll);
+    // assert(total_matches <= std::min<int64_t>(query.size(), target.size()));
 
-    int64_t ninv = std::accumulate(inverted.begin(), inverted.end(), 0ll);
-    assert(ninv <= static_cast<ssize_t>(query.size()));
+    // int64_t ninv = std::accumulate(inverted.begin(), inverted.end(), 0ll);
+    // assert(ninv <= static_cast<ssize_t>(query.size()));
 
-    size_t total_edits = std::accumulate(cigar_parts.begin(), cigar_parts.end(), size_t(0),
-                                         [](size_t prev_edits, const std::string& cigar) {
-                                             return prev_edits + cigar_edits(cigar);
-                                         });
+    // size_t total_edits = std::accumulate(cigar_parts.begin(), cigar_parts.end(), size_t(0),
+    //                                      [](size_t prev_edits, const Cigar& cigar) {
+    //                                          return prev_edits + cigar_edits(cigar);
+    //                                      });
 
-    std::cout << "query is rev-comp: " << is_rc << "\tscore: "
-              << static_cast<Score>(static_cast<double>(score) / score_model.inv_div_factor)
-              << "\tedits: " << total_edits << "\tid: " << identity
-              << "\tmatches: " << total_matches << "\t\% (matches): "
-              << static_cast<double>(identity) / total_matches * 100.0 << "\t\% (length): "
-              << static_cast<double>(identity) / std::max(query.size(), target.size()) * 100.0
-              << " - "
-              << static_cast<double>(identity) / std::min(query.size(), target.size()) * 100.0
-              << "\tfwd nt: " << query.size() - ninv << "\tinv nt: " << ninv << std::endl;
+    std::cout << "query is rev-comp: " << is_rc;
+    // std::cout << "\tscore: "
+    //           << static_cast<Score>(static_cast<double>(score) / score_model.inv_div_factor)
+    //           << "\tedits: " << total_edits << "\tid: " << identity
+    //           << "\tmatches: " << total_matches << "\t\% (matches): "
+    //           << static_cast<double>(identity) / total_matches * 100.0 << "\t\% (length): "
+    //           << static_cast<double>(identity) / std::max(query.size(), target.size()) * 100.0
+    //           << " - "
+    //           << static_cast<double>(identity) / std::min(query.size(), target.size()) * 100.0
+    //           << "\tfwd nt: " << query.size() - ninv << "\tinv nt: " << ninv;
+    std::cout << std::endl;
 
-    std::string query_prc;
+    // std::string query_prc;
 
-    struct InvRange {
-        size_t start_i;
-        Offset r_inv_begin;
-        Offset r_inv_end;
-        Offset q_inv_begin;
-        Offset q_inv_end;
+    // struct InvRange {
+    //     size_t start_i;
+    //     Offset r_inv_begin;
+    //     Offset r_inv_end;
+    //     Offset q_inv_begin;
+    //     Offset q_inv_end;
 
-        Offset rsize() const {
-            assert_valid();
-            return r_inv_end - r_inv_begin;
-        }
+    //     Offset rsize() const {
+    //         assert_valid();
+    //         return r_inv_end - r_inv_begin;
+    //     }
 
-        Offset qsize() const {
-            assert_valid();
-            return q_inv_end - q_inv_begin;
-        }
+    //     Offset qsize() const {
+    //         assert_valid();
+    //         return q_inv_end - q_inv_begin;
+    //     }
 
-        void assert_valid() const {
-            assert(r_inv_begin <= r_inv_end);
-            assert(q_inv_begin <= q_inv_end);
-        }
-    };
-    std::vector<InvRange> inv_ranges;
+    //     void assert_valid() const {
+    //         assert(r_inv_begin <= r_inv_end);
+    //         assert(q_inv_begin <= q_inv_end);
+    //     }
+    // };
 
-    if (check_inversions) {
-        SOffset q_inv_begin = -1;
-        SOffset q_inv_end = -1;
-        const char* q_inv_data = nullptr;
-        SOffset r_inv_begin = -1;
-        SOffset r_inv_end = -1;
-        size_t start_i = inverted.size();
+    // std::vector<InvRange> inv_ranges;
 
-        #ifndef NDEBUG
-        size_t last_end_i = 0;
-        #endif
+    // if (check_inversions) {
+    //     SOffset q_inv_begin = -1;
+    //     SOffset q_inv_end = -1;
+    //     const char* q_inv_data = nullptr;
+    //     SOffset r_inv_begin = -1;
+    //     SOffset r_inv_end = -1;
+    //     size_t start_i = inverted.size();
 
-        for (size_t i = 1; i < best_chain.size(); ++i) {
-            if (best_chain[i].qorientation && !best_chain[i - 1].qorientation) {
-                assert(q_inv_begin == -1);
-                assert(q_inv_end == -1);
-                assert(q_inv_data == nullptr);
-                assert(r_inv_begin == -1);
-                assert(r_inv_end == -1);
-                assert(start_i == inverted.size());
-                assert(i == inv_starts[i]);
-                assert(inverted[i]);
-                assert(inverted_r[i]);
+    //     #ifndef NDEBUG
+    //     size_t last_end_i = 0;
+    //     #endif
 
-                assert(std::accumulate(inverted.begin() + last_end_i,
-                                       inverted.begin() + i,
-                                       size_t(0)) == 0);
-                assert(std::accumulate(inverted_r.begin() + last_end_i,
-                                       inverted_r.begin() + i,
-                                       size_t(0)) == 0);
+    //     for (size_t i = 1; i < best_chain.size(); ++i) {
+    //         if (best_chain[i].qorientation && !best_chain[i - 1].qorientation) {
+    //             assert(q_inv_begin == -1);
+    //             assert(q_inv_end == -1);
+    //             assert(q_inv_data == nullptr);
+    //             assert(r_inv_begin == -1);
+    //             assert(r_inv_end == -1);
+    //             assert(start_i == inverted.size());
+    //             assert(i == inv_starts[i]);
+    //             assert(inverted[i]);
+    //             assert(inverted_r[i]);
+    //             assert(nquery[i] >= inverted[i]);
+    //             assert(nref[i] >= inverted_r[i]);
 
-                start_i = i;
-                auto [ql_1, query_w_1, query_rc_w_1, target_w_1, mum_length_1, qi_1, ti_1, eml_1]
-                    = extract_gap_seqs_switch<false>(target, query, query_rc,
-                                                    best_chain,
-                                                    inv_starts[start_i] - 1,
-                                                    inv_starts[start_i],
-                                                    inv_ends[start_i],
-                                                    inv_ends[start_i] + 1);
-                assert(!ql_1);
-                assert(ti_1 == target_w_1.data() - target.c_str());
-                assert(qi_1 == query_w_1.data() - query.c_str());
+    //             assert(std::accumulate(inverted.begin() + last_end_i,
+    //                                    inverted.begin() + i,
+    //                                    size_t(0)) == 0);
+    //             assert(std::accumulate(inverted_r.begin() + last_end_i,
+    //                                    inverted_r.begin() + i,
+    //                                    size_t(0)) == 0);
 
-                q_inv_begin = qi_1 + nquery[start_i] - inverted[start_i];
-                r_inv_begin = ti_1 + nref[start_i] - inverted_r[start_i];
+    //             start_i = i;
+    //             auto [ql_1, query_w_1, query_rc_w_1, target_w_1, mum_length_1, qi_1, ti_1, eml_1]
+    //                 = extract_gap_seqs_switch<false>(target, query, query_rc,
+    //                                                 best_chain,
+    //                                                 inv_starts[start_i] - 1,
+    //                                                 inv_starts[start_i],
+    //                                                 inv_ends[start_i],
+    //                                                 inv_ends[start_i] + 1);
+    //             assert(!ql_1);
+    //             assert(ti_1 == target_w_1.data() - target.c_str());
+    //             assert(qi_1 == query_w_1.data() - query.c_str());
 
-                q_inv_data = query_rc_w_1.data() + query_rc_w_1.size() + eml_1 - inverted[start_i];
+    //             q_inv_begin = qi_1 + nquery[start_i] - inverted[start_i];
+    //             r_inv_begin = ti_1 + nref[start_i] - inverted_r[start_i];
 
-                assert(target_w_1.data() + nref[start_i] - inverted_r[start_i]
-                        == target.c_str() + r_inv_begin);
-                assert(query_w_1.data() + nquery[start_i] - inverted[start_i]
-                        == query.c_str() + q_inv_begin);
-            } else if (!best_chain[i].qorientation && best_chain[i - 1].qorientation) {
-                assert(q_inv_begin != -1);
-                assert(q_inv_end == -1);
-                assert(q_inv_data != nullptr);
-                assert(r_inv_begin != -1);
-                assert(r_inv_end == -1);
-                assert(start_i < i);
-                assert(i == inv_ends[start_i] + 1);
-                assert(i == inv_ends[i - 1] + 1);
+    //             q_inv_data = query_rc_w_1.data() + query_rc_w_1.size() + eml_1 - inverted[start_i];
 
-                auto [ql_2, query_w_2, query_rc_w_2, target_w_2, mum_length_2, qi_2, ti_2, eml_2]
-                    = extract_gap_seqs_switch<true>(target, query, query_rc,
-                                                    best_chain,
-                                                    inv_starts[start_i] - 1,
-                                                    inv_starts[start_i],
-                                                    inv_ends[start_i],
-                                                    inv_ends[start_i] + 1);
-                assert(ql_2);
-                assert(ti_2 == target_w_2.data() - target.c_str());
+    //             assert(target_w_1.data() + nref[start_i] - inverted_r[start_i]
+    //                     == target.c_str() + r_inv_begin);
+    //             assert(query_w_1.data() + nquery[start_i] - inverted[start_i]
+    //                     == query.c_str() + q_inv_begin);
+    //         } else if (!best_chain[i].qorientation && best_chain[i - 1].qorientation) {
+    //             assert(q_inv_begin != -1);
+    //             assert(q_inv_end == -1);
+    //             assert(q_inv_data != nullptr);
+    //             assert(r_inv_begin != -1);
+    //             assert(r_inv_end == -1);
+    //             assert(start_i < i);
+    //             assert(i == inv_ends[start_i] + 1);
+    //             assert(i == inv_ends[i - 1] + 1);
+    //             assert(nquery[i] >= inverted[i]);
+    //             assert(nref[i] >= inverted_r[i]);
 
-                q_inv_end = query_rc_w_2.data() - query.c_str() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1]);
-                r_inv_end = ti_2 + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1]);
+    //             auto [ql_2, query_w_2, query_rc_w_2, target_w_2, mum_length_2, qi_2, ti_2, eml_2]
+    //                 = extract_gap_seqs_switch<true>(target, query, query_rc,
+    //                                                 best_chain,
+    //                                                 inv_starts[start_i] - 1,
+    //                                                 inv_starts[start_i],
+    //                                                 inv_ends[start_i],
+    //                                                 inv_ends[start_i] + 1);
+    //             assert(ql_2);
+    //             assert(ti_2 == target_w_2.data() - target.c_str());
 
-                assert(target_w_2.data() + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1])
-                        == target.c_str() + r_inv_end);
-                assert(query_rc_w_2.data() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1])
-                        == query.c_str() + q_inv_end);
+    //             q_inv_end = query_rc_w_2.data() - query.c_str() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1]);
+    //             r_inv_end = ti_2 + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1]);
 
-                size_t inv_len = q_inv_end - q_inv_begin;
-                #ifndef NDEBUG
-                last_end_i = i + 1;
-                #endif
-                assert(std::accumulate(inverted.begin() + start_i,
-                                       inverted.begin() + last_end_i,
-                                       size_t(0)) == inv_len);
-                assert(std::accumulate(inverted_r.begin() + start_i,
-                                       inverted_r.begin() + last_end_i,
-                                       SOffset(0)) == r_inv_end - r_inv_begin);
+    //             assert(target_w_2.data() + target_w_2.size() + eml_2 - (nref[inv_ends[start_i] + 1] - inverted_r[inv_ends[start_i] + 1])
+    //                     == target.c_str() + r_inv_end);
+    //             assert(query_rc_w_2.data() + query_rc_w_2.size() + eml_2 - (nquery[inv_ends[start_i] + 1] - inverted[inv_ends[start_i] + 1])
+    //                     == query.c_str() + q_inv_end);
 
-                std::string_view q_inv_window(q_inv_data, inv_len);
-                assert(q_inv_data + inv_len == query_w_2.data() + inverted[inv_ends[start_i] + 1]);
-                assert(is_reverse_complement(q_inv_window, std::string_view(query.c_str() + q_inv_begin, inv_len)));
+    //             size_t inv_len = q_inv_end - q_inv_begin;
+    //             #ifndef NDEBUG
+    //             last_end_i = i + 1;
+    //             #endif
+    //             assert(std::accumulate(inverted.begin() + start_i,
+    //                                    inverted.begin() + last_end_i,
+    //                                    size_t(0)) == inv_len);
+    //             assert(std::accumulate(inverted_r.begin() + start_i,
+    //                                    inverted_r.begin() + last_end_i,
+    //                                    SOffset(0)) == r_inv_end - r_inv_begin);
 
-                inv_ranges.emplace_back(start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
-                assert(static_cast<Offset>(q_inv_begin) >= query_prc.size());
-                query_prc += query.substr(query_prc.size(), q_inv_begin - query_prc.size())
-                                + std::string(q_inv_window);
+    //             std::string_view q_inv_window(q_inv_data, inv_len);
+    //             assert(q_inv_data + inv_len == query_w_2.data() + inverted[inv_ends[start_i] + 1]);
+    //             assert(is_reverse_complement(q_inv_window, std::string_view(query.c_str() + q_inv_begin, inv_len)));
 
-                q_inv_begin = -1;
-                q_inv_end = -1;
-                q_inv_data = nullptr;
-                r_inv_begin = -1;
-                r_inv_end = -1;
-                start_i = inverted.size();
-            }
-        }
+    //             inv_ranges.emplace_back(start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end);
+    //             assert(static_cast<Offset>(q_inv_begin) >= query_prc.size());
+    //             query_prc += query.substr(query_prc.size(), q_inv_begin - query_prc.size())
+    //                             + std::string(q_inv_window);
 
-        assert(q_inv_begin == -1);
-        assert(q_inv_end == -1);
-        assert(q_inv_data == nullptr);
-        assert(r_inv_begin == -1);
-        assert(r_inv_end == -1);
-        assert(start_i == inverted.size());
-        assert(std::accumulate(inverted.begin() + last_end_i,
-                               inverted.end(),
-                               size_t(0)) == 0);
-        assert(std::accumulate(inverted_r.begin() + last_end_i,
-                               inverted_r.end(),
-                               size_t(0)) == 0);
+    //             // // update cigars
+    //             // Offset q_cigar_prefix = nquery[start_i] - inverted[start_i];
+    //             // Offset r_cigar_prefix = nref[start_i] - inverted_r[start_i];
+    //             // auto [cigar_start_prefix, cigar_start_suffix] = cigar_split(
+    //             //     cigar_parts[start_i],
+    //             //     r_cigar_prefix, q_cigar_prefix,
+    //             //     nref[start_i], nquery[start_i]
+    //             // );
+    //             // cigar_parts[i] = cigar_start_prefix + std::to_string(inv_len) + INV_OP + cigar_start_suffix;
 
-        query_prc += query.substr(query_prc.size());
-        assert(query_prc.size() == query.size());
+    //             q_inv_begin = -1;
+    //             q_inv_end = -1;
+    //             q_inv_data = nullptr;
+    //             r_inv_begin = -1;
+    //             r_inv_end = -1;
+    //             start_i = inverted.size();
+    //         }
+    //     }
 
-        std::cout << "Inversions:";
-        for (const auto &[start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end] : inv_ranges) {
-            assert(is_reverse_complement(std::string_view(query.c_str() + q_inv_begin, q_inv_end - q_inv_begin),
-                                         std::string_view(query_prc.c_str() + q_inv_begin, q_inv_end - q_inv_begin)));
-            std::cout << "\t" << r_inv_begin + 1 << "-" << r_inv_end << ";" << q_inv_begin + 1 << "-" << q_inv_end;
-        }
-        std::cout << "\n";
-    }
+    //     assert(q_inv_begin == -1);
+    //     assert(q_inv_end == -1);
+    //     assert(q_inv_data == nullptr);
+    //     assert(r_inv_begin == -1);
+    //     assert(r_inv_end == -1);
+    //     assert(start_i == inverted.size());
+    //     assert(std::accumulate(inverted.begin() + last_end_i,
+    //                            inverted.end(),
+    //                            size_t(0)) == 0);
+    //     assert(std::accumulate(inverted_r.begin() + last_end_i,
+    //                            inverted_r.end(),
+    //                            size_t(0)) == 0);
 
-    std::string_view query_check(check_inversions ? query_prc : query);
+    //     query_prc += query.substr(query_prc.size());
+    //     assert(query_prc.size() == query.size());
 
-    #ifndef NDEBUG
-    std::string final_cigar;
-    #endif
+    //     std::cout << "Inversions:";
+    //     for (const auto &[start_i, r_inv_begin, r_inv_end, q_inv_begin, q_inv_end] : inv_ranges) {
+    //         assert(is_reverse_complement(std::string_view(query.c_str() + q_inv_begin, q_inv_end - q_inv_begin),
+    //                                      std::string_view(query_prc.c_str() + q_inv_begin, q_inv_end - q_inv_begin)));
+    //         std::cout << "\t" << r_inv_begin + 1 << "-" << r_inv_end << ";" << q_inv_begin + 1 << "-" << q_inv_end;
+    //     }
+    //     std::cout << "\n";
+    // }
+
+    // std::string_view query_check(check_inversions ? query_prc : query);
+    std::string query_check;
 
     Offset r_pos = 0;
     Offset q_pos = 0;
@@ -894,56 +914,41 @@ int main(int argc, char** argv) {
     Offset n_qry = 0;
     Offset n_longindel_ref = 0;
     Offset n_longindel_qry = 0;
+
+    // #ifndef NDEBUG
+    // Cigar final_cigar;
+    // #endif
+
     auto push_op = [&](char last_op, int64_t op_len) {
+        assert(q_pos <= query_check.size());
         assert(op_len > 0);
         switch (last_op) {
-            case EQ_OP: {
-                assert(r_pos + op_len <= target.size());
-                assert(q_pos + op_len <= query.size());
-
-                neq += op_len;
-                nmatch += op_len;
-
-                #ifndef NDEBUG
-                auto target_w = target.substr(r_pos, op_len);
-                auto query_w = query_check.substr(q_pos, op_len);
-                assert(target_w.find('N') == std::string_view::npos);
-                assert(query_w.find('N') == std::string_view::npos);
-                assert(target_w == query_w);
-                #endif
-
-                r_pos += op_len;
-                q_pos += op_len;
-            } break;
-            case NEQ_OP: {
-                assert(r_pos + op_len <= target.size());
-                assert(q_pos + op_len <= query.size());
-
-                nmatch += op_len;
-
-                #ifndef NDEBUG
-                auto target_w = target.substr(r_pos, op_len);
-                auto query_w = query_check.substr(q_pos, op_len);
-                assert(target_w.find('N') == std::string_view::npos);
-                assert(query_w.find('N') == std::string_view::npos);
-                assert(std::equal(target_w.begin(), target_w.end(), query_w.begin(),
-                                    [](char a, char b) { return a != b; }));
-                #endif
-
-                r_pos += op_len;
-                q_pos += op_len;
-            } break;
+            case EQ_OP:
+            case NEQ_OP:
             case MATCH_OP: {
                 assert(r_pos + op_len <= target.size());
                 assert(q_pos + op_len <= query.size());
 
-                n_ref += op_len;
-                n_qry += op_len;
+                if (q_pos == query_check.size())
+                    query_check += query.substr(q_pos, op_len);
+
+                assert(q_pos + op_len <= query_check.size());
+
+                if (last_op == EQ_OP)
+                    neq += op_len;
+
+                if (last_op != MATCH_OP)
+                    nmatch += op_len;
 
                 #ifndef NDEBUG
                 auto target_w = target.substr(r_pos, op_len);
                 auto query_w = query_check.substr(q_pos, op_len);
-                assert(std::equal(target_w.begin(), target_w.end(), query_w.begin(),
+                assert(last_op == MATCH_OP || target_w.find('N') == std::string_view::npos);
+                assert(last_op == MATCH_OP || query_w.find('N') == std::string_view::npos);
+                assert(last_op != EQ_OP || target_w == query_w);
+                assert(last_op != NEQ_OP || std::equal(target_w.begin(), target_w.end(), query_w.begin(),
+                                    [](char a, char b) { return a != b; }));
+                assert(last_op != MATCH_OP || std::equal(target_w.begin(), target_w.end(), query_w.begin(),
                                   [](char a, char b) { return a == 'N' || b == 'N'; }));
                 #endif
 
@@ -965,6 +970,11 @@ int main(int argc, char** argv) {
             case QUERY_CONSUME_OP: {
                 assert(q_pos + op_len <= query.size());
 
+                if (q_pos == query_check.size())
+                    query_check += query.substr(q_pos, op_len);
+
+                assert(q_pos + op_len <= query_check.size());
+
                 auto query_w = query_check.substr(q_pos, op_len);
                 Offset n = std::count(query_w.begin(), query_w.end(), 'N');
                 n_qry += n;
@@ -975,8 +985,8 @@ int main(int argc, char** argv) {
             } break;
             case INV_OP: {
                 assert(check_inversions);
-                assert(query_prc.size());
                 assert(q_pos + op_len <= query.size());
+                query_check += query_rc.substr(query_rc.size() - q_pos - op_len, op_len);
                 assert(is_reverse_complement(query_check.substr(q_pos, op_len),
                                              std::string_view(query.c_str() + q_pos, op_len)));
             }
@@ -984,87 +994,96 @@ int main(int argc, char** argv) {
 
         std::cout << op_len << last_op;
 
-        #ifndef NDEBUG
-        final_cigar += std::to_string(op_len) + last_op;
+        // #ifndef NDEBUG
+        // final_cigar += std::to_string(op_len) + last_op;
 
         // TODO: this check is too expensive, revise it
         // assert(final_cigar == cigar_fix_n(final_cigar, target.substr(0, r_pos), query_check.substr(0, q_pos)));
-        #endif
+        // #endif
     };
 
-    auto inv_it = inv_ranges.begin();
-    char last_op = N_OP;
-    size_t op_len = 0;
-    assert(cigar_parts.size() == inverted.size());
+    // auto inv_it = inv_ranges.begin();
+    // char last_op = N_OP;
+    // size_t op_len = 0;
+    // assert(cigar_parts.size() == inverted.size());
+    // for (size_t i = 0; i < cigar_parts.size(); ++i) {
+    //     assert(inv_it == inv_ranges.end() || i <= inv_it->start_i);
+    //     const auto& cigar = cigar_parts[i];
+    //     Offset base_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
+    //     Offset base_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
+
+    //     cigar_caller(cigar, [&](char c, Offset num, Offset rel_r_pos, Offset rel_q_pos) {
+    //         Offset cur_r_pos = base_r_pos + rel_r_pos;
+    //         Offset cur_q_pos = base_q_pos + rel_q_pos;
+    //         assert(r_pos + op_len * (last_op == N_OP || consumes_target(last_op)) == cur_r_pos);
+    //         assert(q_pos + op_len * (last_op == N_OP || consumes_query(last_op)) == cur_q_pos);
+
+    //         if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
+    //             assert(cur_r_pos <= inv_it->r_inv_begin);
+    //             assert(cur_q_pos <= inv_it->q_inv_begin);
+    //             if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
+    //                 assert(last_op != INV_OP);
+    //                 if (last_op != N_OP)
+    //                     push_op(last_op, op_len);
+
+    //                 assert(cur_r_pos == r_pos);
+    //                 assert(cur_q_pos == q_pos);
+
+    //                 // mark an inversion
+    //                 last_op = INV_OP;
+    //                 op_len = inv_it->qsize();
+    //                 ++inv_it;
+    //             }
+    //         }
+    //         if (c != last_op) {
+    //             if (last_op != N_OP)
+    //                 push_op(last_op, op_len);
+
+    //             op_len = num;
+    //             last_op = c;
+    //         } else {
+    //             op_len += num;
+    //         }
+    //     });
+
+    //     Offset cur_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
+    //     Offset cur_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
+    //     if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
+    //         assert(cur_r_pos <= inv_it->r_inv_begin);
+    //         assert(cur_q_pos <= inv_it->q_inv_begin);
+    //         if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
+    //             assert(last_op != INV_OP);
+    //             if (last_op != N_OP)
+    //                 push_op(last_op, op_len);
+
+    //             assert(cur_r_pos == r_pos);
+    //             assert(cur_q_pos == q_pos);
+
+    //             // mark an inversion
+    //             last_op = INV_OP;
+    //             op_len = inv_it->qsize();
+    //             ++inv_it;
+    //         }
+    //     }
+
+    //     assert(inv_it == inv_ranges.end() || i < inv_it->start_i);
+    // }
+
+    // if (last_op != N_OP)
+    //     push_op(last_op, op_len);
+
+    // assert(inv_it == inv_ranges.end());
+
     for (size_t i = 0; i < cigar_parts.size(); ++i) {
-        assert(inv_it == inv_ranges.end() || i <= inv_it->start_i);
-        const auto& cigar = cigar_parts[i];
-        Offset base_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
-        Offset base_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
-
-        cigar_caller(cigar, [&](char c, Offset num, Offset rel_r_pos, Offset rel_q_pos) {
-            Offset cur_r_pos = base_r_pos + rel_r_pos;
-            Offset cur_q_pos = base_q_pos + rel_q_pos;
-            assert(r_pos + op_len * (last_op == N_OP || consumes_target(last_op)) == cur_r_pos);
-            assert(q_pos + op_len * (last_op == N_OP || consumes_query(last_op)) == cur_q_pos);
-
-            if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
-                assert(cur_r_pos <= inv_it->r_inv_begin);
-                assert(cur_q_pos <= inv_it->q_inv_begin);
-                if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
-                    assert(last_op != INV_OP);
-                    if (last_op != N_OP)
-                        push_op(last_op, op_len);
-
-                    assert(cur_r_pos == r_pos);
-                    assert(cur_q_pos == q_pos);
-
-                    // mark an inversion
-                    last_op = INV_OP;
-                    op_len = inv_it->qsize();
-                    ++inv_it;
-                }
-            }
-            if (c != last_op) {
-                if (last_op != N_OP)
-                    push_op(last_op, op_len);
-
-                op_len = num;
-                last_op = c;
-            } else {
-                op_len += num;
-            }
-        });
-
-        Offset cur_r_pos = r_pos + op_len * (last_op == N_OP || consumes_target(last_op));
-        Offset cur_q_pos = q_pos + op_len * (last_op == N_OP || consumes_query(last_op));
-        if (inv_it != inv_ranges.end() && i == inv_it->start_i) {
-            assert(cur_r_pos <= inv_it->r_inv_begin);
-            assert(cur_q_pos <= inv_it->q_inv_begin);
-            if (cur_r_pos == inv_it->r_inv_begin && cur_q_pos == inv_it->q_inv_begin) {
-                assert(last_op != INV_OP);
-                if (last_op != N_OP)
-                    push_op(last_op, op_len);
-
-                assert(cur_r_pos == r_pos);
-                assert(cur_q_pos == q_pos);
-
-                // mark an inversion
-                last_op = INV_OP;
-                op_len = inv_it->qsize();
-                ++inv_it;
-            }
-        }
-
-        assert(inv_it == inv_ranges.end() || i < inv_it->start_i);
+        cigar_caller(cigar_parts[i], [&](char c, Offset num, Offset /* rel_r_pos */, Offset /* rel_q_pos */) {
+            push_op(c, num);
+        }, nref[i]);
     }
 
-    if (last_op != N_OP)
-        push_op(last_op, op_len);
-
     std::cout << std::endl;
-    assert(inv_it == inv_ranges.end());
-    assert(final_cigar == cigar_fix_n(final_cigar, target, query_check));
+
+    assert(query_check.size() == query.size());
+    // assert(final_cigar == cigar_fix_n(final_cigar, target, query_check));
 
     std::cout << neq << " " << nmatch << " " << n_ref << " " << n_qry << " " << n_longindel_ref << " " << n_longindel_qry << "\n";
 
