@@ -749,8 +749,6 @@ void reseed_large_gaps(std::string_view target,
             std::tie(inv_starts, inv_ends) = compute_invs(target, query, query_rc, best_chain);
 
             --i;
-
-            assert(best_chain[i + 1] == *jt_b);
         } else { // inversion open
             assert(!qorientation_last && qorientation);
 

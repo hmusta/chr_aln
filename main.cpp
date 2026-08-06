@@ -934,23 +934,26 @@ int main(int argc, char** argv) {
 
                 assert(q_pos + op_len <= query_check.size());
 
-                if (last_op == EQ_OP)
-                    neq += op_len;
-
-                if (last_op != MATCH_OP)
-                    nmatch += op_len;
-
-                #ifndef NDEBUG
-                auto target_w = target.substr(r_pos, op_len);
-                auto query_w = query_check.substr(q_pos, op_len);
-                assert(last_op == MATCH_OP || target_w.find('N') == std::string_view::npos);
-                assert(last_op == MATCH_OP || query_w.find('N') == std::string_view::npos);
-                assert(last_op != EQ_OP || target_w == query_w);
+                std::string_view target_w(target.c_str() + r_pos, op_len);
+                std::string_view query_w(query_check.c_str() + q_pos, op_len);
                 assert(last_op != NEQ_OP || std::equal(target_w.begin(), target_w.end(), query_w.begin(),
                                     [](char a, char b) { return a != b; }));
-                assert(last_op != MATCH_OP || std::equal(target_w.begin(), target_w.end(), query_w.begin(),
-                                  [](char a, char b) { return a == 'N' || b == 'N'; }));
-                #endif
+
+                if (last_op != MATCH_OP) {
+                    assert(target_w.find('N') == std::string_view::npos);
+                    assert(query_w.find('N') == std::string_view::npos);
+                    nmatch += op_len;
+                } else {
+                    assert(std::equal(target_w.begin(), target_w.end(), query_w.begin(),
+                                      [](char a, char b) { return a == 'N' || b == 'N'; }));
+                    n_ref += std::count(target_w.begin(), target_w.end(), 'N');
+                    n_qry += std::count(query_w.begin(), query_w.end(), 'N');
+                }
+
+                if (last_op == EQ_OP) {
+                    assert(target_w == query_w);
+                    neq += op_len;
+                }
 
                 r_pos += op_len;
                 q_pos += op_len;
@@ -958,7 +961,7 @@ int main(int argc, char** argv) {
             case TARGET_CONSUME_OP: {
                 assert(r_pos + op_len <= target.size());
 
-                auto target_w = target.substr(r_pos, op_len);
+                std::string_view target_w(target.c_str() + r_pos, op_len);
                 Offset n = std::count(target_w.begin(), target_w.end(), 'N');
                 n_ref += n;
 
@@ -975,7 +978,7 @@ int main(int argc, char** argv) {
 
                 assert(q_pos + op_len <= query_check.size());
 
-                auto query_w = query_check.substr(q_pos, op_len);
+                std::string_view query_w(query_check.c_str() + q_pos, op_len);
                 Offset n = std::count(query_w.begin(), query_w.end(), 'N');
                 n_qry += n;
                 if (op_len - n > long_indel_cutoff) {
@@ -987,7 +990,7 @@ int main(int argc, char** argv) {
                 assert(check_inversions);
                 assert(q_pos + op_len <= query.size());
                 query_check += query_rc.substr(query_rc.size() - q_pos - op_len, op_len);
-                assert(is_reverse_complement(query_check.substr(q_pos, op_len),
+                assert(is_reverse_complement(std::string_view(query_check.c_str() + q_pos, op_len),
                                              std::string_view(query.c_str() + q_pos, op_len)));
             }
         }

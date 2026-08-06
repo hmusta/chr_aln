@@ -1089,6 +1089,9 @@ run_alignment(wfa::WFAligner& aligner,
     assert(query_rc_1.data() >= query_rc.data());
     assert(query_2.data() >= query_rc_1.data() + query_rc_1.size());
     assert(query_rc.data() + query_rc.size() >= query_2.data() + query_2.size());
+    #ifdef NDEBUG
+    std::ignore = query_rc;
+    #endif
 
     Offset qi_1 = query_1.data() - query.data();
     Offset ti_1 = target_1.data() - target.data();
