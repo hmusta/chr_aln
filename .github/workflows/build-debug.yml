@@ -1,0 +1,42 @@
+name: Build (Debug)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Debug build + unit tests
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
+
+    steps:
+      - name: Check out repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc-14 g++-14
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Run unit tests
+        # Exclude "wfa2lib", the WFA2-lib submodule's own test suite: it shells out
+        # to align_benchmark, which this project never builds.
+        run: ctest --test-dir build --output-on-failure -j "$(nproc)" -E '^wfa2lib$'
