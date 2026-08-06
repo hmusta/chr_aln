@@ -198,7 +198,7 @@ inline size_t wf_next(T q_begin,
     assert(table.size() == table.alloc_size() + table.offset());
 
     if (p - table.offset() > score_model.max_pen) {
-        table.dealloc_front(std::min(p - table.offset() - score_model.max_pen, table.alloc_size() - 1));
+        table.dealloc_front(std::min<size_t>(p - table.offset() - score_model.max_pen, table.alloc_size() - 1));
         assert(table.alloc_size() == score_model.max_pen + 1);
     }
 
