@@ -1,5 +1,5 @@
 # chr_aln
-Rearrangement-aware whole-genome global alignment
+Rearrangement-aware whole-genome global alignment.
 
 ## Usage instructions
 ### Compilation instructions
