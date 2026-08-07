@@ -694,8 +694,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    Score score = std::accumulate(scores.begin(), scores.end(), Score(0ll));
-
     std::cout << "query is rev-comp: " << is_rc << std::endl;
 
     std::string query_check;
