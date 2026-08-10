@@ -34,7 +34,6 @@ import re
 import sys
 
 from helpers import _COMPLEMENT,read_fasta
-from check_syri import stream_syri
 
 # blocks that can carry matches once inversions have been flipped
 CHAIN_TYPES = ("SYNAL","INVAL")
@@ -43,6 +42,29 @@ CHAIN_TYPES = ("SYNAL","INVAL")
 # flipping them would not make them chainable.
 INVERTED_TYPES = ("INVAL","INVTRAL")
 VARIANT_TYPES = ("SNP","INS","DEL","HDR")
+
+def stream_syri(fname):
+    """Yield the span, identifiers and annotation type of each SyRI record.
+
+    SyRI writes one-based inclusive coordinates; these come back zero-based and
+    half-open. A '-' start or end marks a record unaligned on that side and
+    becomes zero, which is how NOTAL records are recognised.
+    """
+    with open(fname) as f:
+        for number,line in enumerate(f,1):
+            fields = line.rstrip().split()
+            if len(fields) < 11:
+                continue
+            try:
+                rbegin = int(fields[1]) - 1 if fields[1] != "-" else 0
+                rend = int(fields[2]) if fields[2] != "-" else 0
+                qbegin = int(fields[6]) - 1 if fields[6] != "-" else 0
+                qend = int(fields[7]) if fields[7] != "-" else 0
+            except ValueError:
+                sys.stderr.write(f"{fname}:{number}: cannot parse coordinates\n")
+                raise
+            assert(rbegin >= 0 and qbegin >= 0)
+            yield rbegin,rend,qbegin,qend,fields[8],fields[9],fields[10]
 
 def read_paf(fname):
     """Index the PAF alignments by their coordinates, keeping the CIGAR.
@@ -312,8 +334,8 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
 
     records = []
     inverted = []
-    for entry in stream_syri(syri_fname):
-        i,rh,rbegin,rend,rseq,qh,qbegin,qend,qseq,rid,pid,atype,in_inv,copy_type = entry
+    for rbegin,rend,qbegin,qend,rid,pid,atype in stream_syri(syri_fname):
+        # inverted records are written with the query interval running backwards
         if qend > 0 and qbegin + 1 > qend:
             qbegin,qend = qend - 1,qbegin + 1
         records.append((rbegin,rend,qbegin,qend,rid,pid,atype))
@@ -419,7 +441,8 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
     stats = dict(blocks=len(blocks),used=used,skipped=skipped,
                  skew=total_skew,dropped=total_dropped,inverted=len(inverted),
                  inverted_bp=sum(e - b for b,e in inverted),repaired=repaired,
-                 from_paf=from_paf,from_syri=from_syri,eq_divergence=eq_divergence)
+                 from_paf=from_paf,from_syri=from_syri,eq_divergence=eq_divergence,
+                 qry_header=qry_header)
     return cigar,ref_seq,qry_seq,stats
 
 def verify(cigar, ref_seq, qry_seq):
@@ -440,7 +463,7 @@ def verify(cigar, ref_seq, qry_seq):
             q += length
     return r,q,bad_eq,bad_x
 
-USAGE = """usage: syri_to_cigar.py REF.fa QRY.fa SYRI.out ALIGNMENTS.paf [OUT.cigar]
+USAGE = """usage: syri_to_cigar.py REF.fa QRY.fa SYRI.out ALIGNMENTS.paf OUT_PREFIX
 
 Build a global CIGAR alignment between a reference and a query from SyRI output,
 taking the base-level alignment from the PAF that SyRI was run on.
@@ -450,13 +473,13 @@ positional arguments:
   QRY.fa           query FASTA, single sequence
   SYRI.out         SyRI annotation table, used to classify each alignment
   ALIGNMENTS.paf   the PAF SyRI was run on; must carry CIGARs in the cg:Z: tag
-  OUT.cigar        where to write the CIGAR (default: standard output)
+  OUT_PREFIX       prefix for the output files, including any directory
 
 output:
-  OUT.cigar        the CIGAR, as run-length pairs such as 135=5I6=1X
-  OUT.cigar.qry.fa the query with inverted regions reverse-complemented. The
-                   CIGAR aligns the reference against THIS sequence, not the
-                   original query, so validating against QRY.fa will fail.
+  OUT_PREFIX.cigar   the CIGAR, as run-length pairs such as 135=5I6=1X
+  OUT_PREFIX.qry.fa  the query with inverted regions reverse-complemented. The
+                     CIGAR aligns the reference against THIS sequence, not the
+                     original query, so validating against QRY.fa will fail.
   A summary of the chaining, and checks that the alignment is global and that
   every = and X is correct, are written to standard error.
 
@@ -467,17 +490,17 @@ operations:
   I  consumes query only
 
 example:
-  ./syri_to_cigar.py ref.fa qry.fa syri.out aln.paf out.cigar
+  ./syri_to_cigar.py ref.fa qry.fa syri.out aln.paf out/chr22
+  writes out/chr22.cigar and out/chr22.qry.fa
 """
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if any(a in ("-h","--help") for a in args) or not 4 <= len(args) <= 5:
+    if any(a in ("-h","--help") for a in args) or len(args) != 5:
         sys.stderr.write(USAGE)
         sys.exit(0 if args and args[0] in ("-h","--help") else 2)
 
-    ref_fname,qry_fname,syri_fname,paf_fname = args[:4]
-    out_fname = args[4] if len(args) > 4 else None
+    ref_fname,qry_fname,syri_fname,paf_fname,out_prefix = args
 
     cigar,ref_seq,qry_seq,stats = build_cigar(ref_fname,qry_fname,syri_fname,paf_fname)
 
@@ -507,14 +530,17 @@ if __name__ == "__main__":
     print(f"identity: {counts.get('=',0)} / {min(ref_len,qry_len)} "
           f"({100*counts.get('=',0)/min(ref_len,qry_len):.2f}%)",file=sys.stderr)
 
-    text = "".join(f"{length}{op}" for op,length in cigar)
-    if out_fname:
-        with open(out_fname,'w') as f:
-            f.write(text + "\n")
-        # the CIGAR aligns against the query with its inversions flipped
-        with open(out_fname + ".qry.fa",'w') as f:
-            f.write(">inverted_" + read_fasta(qry_fname)[0] + "\n")
-            for i in range(0,len(qry_seq),60):
-                f.write(qry_seq[i:i+60] + "\n")
-    else:
-        print(text)
+    cigar_fname = out_prefix + ".cigar"
+    flipped_fname = out_prefix + ".qry.fa"
+
+    with open(cigar_fname,'w') as f:
+        f.write("".join(f"{length}{op}" for op,length in cigar) + "\n")
+
+    # the CIGAR aligns against the query with its inversions flipped, so that
+    # sequence has to travel with it
+    with open(flipped_fname,'w') as f:
+        f.write(">inverted_" + stats['qry_header'] + "\n")
+        for i in range(0,len(qry_seq),60):
+            f.write(qry_seq[i:i+60] + "\n")
+
+    print(f"wrote {cigar_fname} and {flipped_fname}",file=sys.stderr)
