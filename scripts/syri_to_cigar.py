@@ -440,9 +440,44 @@ def verify(cigar, ref_seq, qry_seq):
             q += length
     return r,q,bad_eq,bad_x
 
+USAGE = """usage: syri_to_cigar.py REF.fa QRY.fa SYRI.out ALIGNMENTS.paf [OUT.cigar]
+
+Build a global CIGAR alignment between a reference and a query from SyRI output,
+taking the base-level alignment from the PAF that SyRI was run on.
+
+positional arguments:
+  REF.fa           reference FASTA, single sequence
+  QRY.fa           query FASTA, single sequence
+  SYRI.out         SyRI annotation table, used to classify each alignment
+  ALIGNMENTS.paf   the PAF SyRI was run on; must carry CIGARs in the cg:Z: tag
+  OUT.cigar        where to write the CIGAR (default: standard output)
+
+output:
+  OUT.cigar        the CIGAR, as run-length pairs such as 135=5I6=1X
+  OUT.cigar.qry.fa the query with inverted regions reverse-complemented. The
+                   CIGAR aligns the reference against THIS sequence, not the
+                   original query, so validating against QRY.fa will fail.
+  A summary of the chaining, and checks that the alignment is global and that
+  every = and X is correct, are written to standard error.
+
+operations:
+  =  identical bases, consumes reference and query
+  X  substituted bases, consumes reference and query
+  D  consumes reference only
+  I  consumes query only
+
+example:
+  ./syri_to_cigar.py ref.fa qry.fa syri.out aln.paf out.cigar
+"""
+
 if __name__ == "__main__":
-    ref_fname,qry_fname,syri_fname,paf_fname = sys.argv[1:5]
-    out_fname = sys.argv[5] if len(sys.argv) > 5 else None
+    args = sys.argv[1:]
+    if any(a in ("-h","--help") for a in args) or not 4 <= len(args) <= 5:
+        sys.stderr.write(USAGE)
+        sys.exit(0 if args and args[0] in ("-h","--help") else 2)
+
+    ref_fname,qry_fname,syri_fname,paf_fname = args[:4]
+    out_fname = args[4] if len(args) > 4 else None
 
     cigar,ref_seq,qry_seq,stats = build_cigar(ref_fname,qry_fname,syri_fname,paf_fname)
 
