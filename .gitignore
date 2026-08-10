@@ -68,5 +68,8 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# mummer directory
-mummer/
+# scratch directory
+scratch/
+
+# pycache
+scripts/__pycache__/
