@@ -2,14 +2,16 @@
 """Build a global CIGAR alignment between a reference and a query from SyRI output.
 
 Usage:
-    ./syri_to_cigar.py REF.fa QRY.fa SYRI.out ALIGNMENTS.paf [OUT.cigar]
+    ./syri_to_cigar.py [--format FMT] REF.fa QRY.fa SYRI.out ALIGNMENTS OUT_PREFIX
 
 SyRI classifies each alignment (syntenic, inverted, duplicated, translocated),
 which is what decides whether a block can join a colinear chain, but it only
-summarises the alignment itself as variant records. The PAF it was run on
-carries the real base-level CIGAR, so the classification is taken from SyRI and
-the alignment from the PAF. Blocks with no matching PAF record fall back to
-reconstructing the alignment from the variant records.
+summarises the alignment itself as variant records. The alignments it was run
+on carry the real base-level alignment, so the classification is taken from
+SyRI and the alignment from minimap2 PAF or nucmer delta. Blocks with no
+matching alignment record fall back to reconstructing one from the variant
+records, which is also what show-coords input leaves every block doing, since
+coords carry no base-level alignment at all.
 
 Operations, in the usual convention:
     =   identical bases, consumes reference and query
@@ -33,14 +35,23 @@ reached and come out as D/I, as does anything SyRI left unaligned.
 import re
 import sys
 
+import numpy as np
+
 from helpers import _COMPLEMENT,read_fasta
 
 # blocks that can carry matches once inversions have been flipped
 CHAIN_TYPES = ("SYNAL","INVAL")
-# regions reverse-complemented in the query. Inverted duplications are left
-# alone: they are surplus copies whose reference is already spoken for, so
-# flipping them would not make them chainable.
-INVERTED_TYPES = ("INVAL","INVTRAL")
+# Blocks whose query span is reverse-complemented. These are the parents of the
+# inverted alignments in CHAIN_TYPES, not the alignments themselves: SyRI splits
+# one inversion into several alignments whose query intervals can overlap each
+# other, and overlapping intervals cannot each be flipped. Flipping the whole
+# block instead is equivalent, because reverse-complementing a region also
+# reverse-complements every interval inside it, just relocated.
+#
+# Only true inversions qualify. Inverted translocations and inverted
+# duplications are not reachable in a colinear chain, so flipping them would
+# clip neighbouring forward blocks for no gain.
+INVERTED_TYPES = ("INV",)
 VARIANT_TYPES = ("SNP","INS","DEL","HDR")
 
 def stream_syri(fname):
@@ -66,8 +77,11 @@ def stream_syri(fname):
             assert(rbegin >= 0 and qbegin >= 0)
             yield rbegin,rend,qbegin,qend,fields[8],fields[9],fields[10]
 
-def read_paf(fname):
+def read_paf(fname, keys=None):
     """Index the PAF alignments by their coordinates, keeping the CIGAR.
+
+    Only records whose coordinates appear in keys are kept, so a whole-genome
+    PAF does not have every CIGAR parsed when a few hundred are wanted.
 
     The PAF is the alignment SyRI was run on, so its records carry the exact
     base-level alignment that SyRI only summarises as variant records. Query
@@ -83,6 +97,8 @@ def read_paf(fname):
         qbegin,qend = int(fields[2]),int(fields[3])
         strand = fields[4]
         rbegin,rend = int(fields[7]),int(fields[8])
+        if keys is not None and (rbegin,rend,qbegin,qend) not in keys:
+            continue
 
         cigar = None
         for tag in fields[12:]:
@@ -96,9 +112,150 @@ def read_paf(fname):
         alignments[(rbegin,rend,qbegin,qend)] = (strand,ops)
     return alignments
 
+def delta_to_ops(deltas, ref_span, qry_span):
+    """Turn one nucmer delta run into operations.
+
+    Each value counts the aligned positions before the next gap: positive means
+    a base present only in the reference, negative one present only in the
+    query. Aligned stretches come out as 'M' because the delta encoding does not
+    say which of them differ; resolve_matches settles that from the sequence.
+    """
+    ops = []
+    r = q = 0
+    for value in deltas:
+        run = abs(value) - 1
+        append_op(ops,'M',run)
+        r += run
+        q += run
+        if value > 0:
+            append_op(ops,'D',1)
+            r += 1
+        else:
+            append_op(ops,'I',1)
+            q += 1
+
+    tail_r,tail_q = ref_span - r,qry_span - q
+    if tail_r != tail_q or tail_r < 0:
+        raise ValueError(f"delta run does not reconcile: {tail_r} vs {tail_q}")
+    append_op(ops,'M',tail_r)
+    return ops
+
+def read_delta(fname, keys=None):
+    """Index nucmer .delta alignments by coordinates, keeping the gap encoding.
+
+    Only records whose coordinates appear in keys are kept."""
+    alignments = {}
+    pending = None
+    deltas = []
+
+    with open(fname) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('>'):
+                pending = None
+                continue
+
+            fields = line.split()
+            if len(fields) >= 7:
+                # start of an alignment: ref span, query span, error counts
+                s1,e1,s2,e2 = (int(x) for x in fields[:4])
+                if s2 <= e2:
+                    strand,qbegin,qend = '+',s2 - 1,e2
+                else:
+                    strand,qbegin,qend = '-',e2 - 1,s2
+                pending = (s1 - 1,e1,qbegin,qend,strand)
+                if keys is not None and pending[:4] not in keys:
+                    pending = None
+                deltas = []
+                continue
+
+            if pending is None:
+                continue
+
+            value = int(fields[0])
+            if value == 0:
+                rbegin,rend,qbegin,qend,strand = pending
+                ops = delta_to_ops(deltas,rend - rbegin,qend - qbegin)
+                alignments[(rbegin,rend,qbegin,qend)] = (strand,ops)
+                pending = None
+            else:
+                deltas.append(value)
+
+    return alignments
+
+def read_coords(fname, keys=None):
+    """Read show-coords output, in either the padded or the -T layout.
+
+    Coords give the alignment intervals but no base-level alignment, so blocks
+    matched this way still have to take their alignment from SyRI's variants.
+    """
+    alignments = {}
+    for line in open(fname):
+        fields = line.replace('|',' ').split()
+        if len(fields) < 4:
+            continue
+        try:
+            s1,e1,s2,e2 = (int(x) for x in fields[:4])
+        except ValueError:
+            continue
+        if s2 <= e2:
+            strand,qbegin,qend = '+',s2 - 1,e2
+        else:
+            strand,qbegin,qend = '-',e2 - 1,s2
+        if keys is not None and (s1 - 1,e1,qbegin,qend) not in keys:
+            continue
+        alignments[(s1 - 1,e1,qbegin,qend)] = (strand,None)
+    return alignments
+
+def detect_format(fname):
+    """Work out whether the alignments are PAF, nucmer delta, or show-coords."""
+    with open(fname) as f:
+        head = [f.readline() for _ in range(20)]
+    for line in head:
+        if not line:
+            break
+        if line.startswith('>') and len(line.split()) == 4:
+            return "delta"
+        if '[S1]' in line or line.startswith('====='):
+            return "coords"
+        fields = line.rstrip("\n").split("\t")
+        if len(fields) >= 12 and fields[4] in ('+','-'):
+            return "paf"
+    raise ValueError(f"{fname}: cannot tell whether this is PAF, delta or coords")
+
+READERS = {"paf":read_paf,"delta":read_delta,"coords":read_coords}
+
+def resolve_matches(ops, ref_seq, qry_seq, rbegin, qbegin):
+    """Split 'M' operations into '=' and 'X' by comparing the two sequences.
+
+    nucmer records where the gaps are but not which aligned bases differ, so
+    that distinction has to be recovered from the sequence itself.
+    """
+    if not any(op == 'M' for op,_ in ops):
+        return ops
+
+    out = []
+    r,q = rbegin,qbegin
+    for op,length in ops:
+        if op != 'M':
+            append_op(out,op,length)
+            r += length if op in "=XD" else 0
+            q += length if op in "=XI" else 0
+            continue
+
+        same = (np.frombuffer(ref_seq[r:r+length].encode(),dtype='S1') ==
+                np.frombuffer(qry_seq[q:q+length].encode(),dtype='S1'))
+        bounds = [0,*(np.flatnonzero(np.diff(same)) + 1),length]
+        for begin,end in zip(bounds,bounds[1:]):
+            append_op(out,'=' if same[begin] else 'X',end - begin)
+        r += length
+        q += length
+
+    return out
+
 def ops_span(ops):
-    return (sum(l for o,l in ops if o in "=XD"),
-            sum(l for o,l in ops if o in "=XI"))
+    return (sum(l for o,l in ops if o in "=XDM"),
+            sum(l for o,l in ops if o in "=XIM"))
 
 def append_op(ops, op, length):
     if length <= 0:
@@ -195,8 +352,8 @@ def trim_front(ops, rbegin, qbegin, min_r, min_q):
     i = 0
     while i < len(ops) and (r < min_r or q < min_q):
         op,length = ops[i]
-        consumes_r = op in "=XD"
-        consumes_q = op in "=XI"
+        consumes_r = op in "=XDM"
+        consumes_q = op in "=XIM"
 
         if (r < min_r and not consumes_r) or (q < min_q and not consumes_q):
             # cannot advance the axis that is still behind, so it all has to go
@@ -227,8 +384,8 @@ def trim_back(ops, rend, qend, max_r, max_q):
     i = len(ops)
     while i > 0 and (r > max_r or q > max_q):
         op,length = ops[i-1]
-        consumes_r = op in "=XD"
-        consumes_q = op in "=XI"
+        consumes_r = op in "=XDM"
+        consumes_q = op in "=XIM"
 
         if (r > max_r and not consumes_r) or (q > max_q and not consumes_q):
             take = length
@@ -246,6 +403,43 @@ def trim_back(ops, rend, qend, max_r, max_q):
             break
 
     return ops[:i],r,q
+
+UNCOVERED = 3
+
+def project_reference(ops, obegin, rbegin, span):
+    """Per reference position: 0 identical, 1 substituted, 2 absent from the
+    query, UNCOVERED where these operations say nothing."""
+    state = np.full(span,UNCOVERED,dtype=np.int8)
+    r = obegin - rbegin
+    for op,length in ops:
+        if op == '=':
+            state[r:r+length] = 0
+            r += length
+        elif op in "XM":
+            state[r:r+length] = 1
+            r += length
+        elif op == 'D':
+            state[r:r+length] = 2
+            r += length
+    return state
+
+def compare_descriptions(aln_ops, aln_rbegin, syri_ops, syri_rbegin, rbegin, rend):
+    """Count reference positions the two descriptions disagree about.
+
+    Returns the bases SyRI's records imply are identical but the alignment does
+    not back up, and the converse.
+    """
+    span = rend - rbegin
+    a = project_reference(aln_ops,aln_rbegin,rbegin,span)
+    s = project_reference(syri_ops,syri_rbegin,rbegin,span)
+    both = (a != UNCOVERED) & (s != UNCOVERED)
+    return (int((both & (s == 0) & (a != 0)).sum()),
+            int((both & (a == 0) & (s != 0)).sum()))
+
+def is_inverted_alignment(atype):
+    """SyRI names alignment records with an 'AL' suffix; those belonging to an
+    inverted block start with INV."""
+    return atype.endswith("AL") and atype.startswith("INV")
 
 def inverted_limit(qbegin, qend, regions):
     """Where a block has to stop so it does not run into a reverse-complemented
@@ -327,10 +521,9 @@ def repair_cigar(cigar, ref_seq, qry_seq, max_shift=4096):
 
     return out,repaired
 
-def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
+def build_cigar(ref_fname, qry_fname, syri_fname, aln_fname=None, aln_format=None):
     ref_header,ref_seq = read_fasta(ref_fname)
     qry_header,qry_seq = read_fasta(qry_fname)
-    paf = read_paf(paf_fname) if paf_fname else {}
 
     records = []
     inverted = []
@@ -344,9 +537,22 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
         if atype in INVERTED_TYPES:
             inverted.append((qbegin,qend))
 
+    # Overlapping inversions cannot each be flipped, so merge them. The merged
+    # span still reverse-complements every alignment inside it correctly; what
+    # is lost is the order of the two inversions relative to each other, which
+    # trimming resolves during chaining.
     inverted.sort()
-    for a,b in zip(inverted,inverted[1:]):
-        assert(a[1] <= b[0]),"inverted regions overlap"
+    merged = []
+    merges = 0
+    for begin,end in inverted:
+        if merged and begin < merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1],end)
+            merges += 1
+        else:
+            merged.append([begin,end])
+    inverted = [(begin,end) for begin,end in merged]
+    if merges:
+        print(f"WARNING: merged {merges} overlapping inverted regions",file=sys.stderr)
 
     qry_seq = invert_query(qry_seq,inverted)
     ref_len,qry_len = len(ref_seq),len(qry_seq)
@@ -355,15 +561,23 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
     variants = []
     for rbegin,rend,qbegin,qend,rid,pid,atype in records:
         # the PAF is keyed on the original, unflipped query coordinates
-        paf_key = (rbegin,rend,qbegin,qend)
+        aln_key = (rbegin,rend,qbegin,qend)
         qbegin,qend = remap_query(qbegin,qend,inverted)
         if atype in CHAIN_TYPES:
-            blocks.append((rbegin,rend,qbegin,qend,rid,pid,atype,paf_key))
+            blocks.append((rbegin,rend,qbegin,qend,rid,pid,atype,aln_key))
         elif atype in VARIANT_TYPES:
             variants.append((rbegin,rend,qbegin,qend,atype,pid))
 
     variants.sort()
     blocks.sort()
+
+    # Read the alignments only now, so only the blocks that will actually be
+    # chained get their CIGARs parsed. A whole-genome PAF can be hundreds of
+    # megabytes of CIGAR for thousands of records when a few hundred are wanted.
+    alignments = {}
+    if aln_fname:
+        aln_format = aln_format or detect_format(aln_fname)
+        alignments = READERS[aln_format](aln_fname,{b[7] for b in blocks})
 
     # A variant and the alignment it belongs to are both children of the same
     # SyRI block, so match them on the parent id first. Going by coordinates
@@ -384,42 +598,65 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
     r,q = 0,0
     used = skipped = 0
     total_skew = total_dropped = 0
-    from_paf = from_syri = 0
+    from_aln = from_syri = matched_intervals = 0
+    clipped_by_inversion = 0
+    syri_unsupported = syri_contradicted = 0
     eq_divergence = 0
 
-    for rbegin,rend,qbegin,qend,rid,pid,atype,paf_key in blocks:
-        entry = paf.get(paf_key)
-        if entry is not None:
-            # the PAF carries the real alignment, so use it rather than
-            # reconstructing one from SyRI's variant records
-            strand,paf_ops = entry
-            ops = [[op,length] for op,length in paf_ops]
+    for rbegin,rend,qbegin,qend,rid,pid,atype,aln_key in blocks:
+        entry = alignments.get(aln_key)
+        syri_ops,skew,dropped = block_ops(rbegin,rend,qbegin,qend,per_block.get(rid,[]))
+
+        if entry is not None and entry[1] is not None:
+            # the aligner's own output carries the real alignment, so use it
+            # rather than reconstructing one from SyRI's variant records
+            strand,aligned_ops = entry
+            ops = [[op,length] for op,length in aligned_ops]
             skew = dropped = 0
-            from_paf += 1
+            from_aln += 1
 
             span_r,span_q = ops_span(ops)
             if (span_r,span_q) != (rend - rbegin,qend - qbegin):
-                print(f"WARNING: PAF CIGAR for {rid} spans {span_r}/{span_q}, "
+                print(f"WARNING: alignment for {rid} spans {span_r}/{span_q}, "
                       f"block is {rend-rbegin}/{qend-qbegin}",file=sys.stderr)
-            # cross-check what SyRI's variants alone would have produced
-            syri_ops,_,_ = block_ops(rbegin,rend,qbegin,qend,per_block.get(rid,[]))
-            paf_eq = sum(l for o,l in ops if o == '=')
-            syri_eq = sum(l for o,l in syri_ops if o == '=')
-            eq_divergence += abs(paf_eq - syri_eq)
         else:
-            ops,skew,dropped = block_ops(rbegin,rend,qbegin,qend,per_block.get(rid,[]))
+            if entry is not None:
+                matched_intervals += 1
+            ops = syri_ops
             from_syri += 1
 
+        # trim both the alignment and the SyRI reconstruction to the same window
+        # so the cross-check below compares like with like
         ops,brbegin,bqbegin = trim_front(ops,rbegin,qbegin,r,q)
-        if ops and atype not in ("INVAL","INVTRAL"):
-            # a forward block must not reach into a region flipped for an
-            # inversion; the inverted alignment itself owns that sequence
+        syri_ops,srbegin,_ = trim_front(syri_ops,rbegin,qbegin,r,q)
+        if ops and not is_inverted_alignment(atype):
+            # A forward block must not reach into a region flipped for an
+            # inversion; the inverted alignment itself owns that sequence. Note
+            # that a palindromic repeat can align in both orientations, so the
+            # sequence check cannot tell the two readings apart here -- the
+            # clipped total below is how much sequence that choice affects.
             limit = inverted_limit(bqbegin,qend,inverted)
             if limit < qend:
+                before = ops_span(ops)[1]
                 ops,_,_ = trim_back(ops,rend,qend,ref_len,limit)
+                syri_ops,_,_ = trim_back(syri_ops,rend,qend,ref_len,limit)
+                clipped_by_inversion += before - ops_span(ops)[1]
         if not ops:
             skipped += 1
             continue
+
+        # only now that the surviving window is known is it worth resolving
+        # which aligned bases match; doing it earlier would compare against
+        # sequence that is about to be discarded, possibly reverse-complemented
+        ops = resolve_matches(ops,ref_seq,qry_seq,brbegin,bqbegin)
+        if entry is not None and entry[1] is not None:
+            eq_divergence += abs(sum(l for o,l in ops if o == '=') -
+                                 sum(l for o,l in syri_ops if o == '='))
+            unbacked,contradicted = compare_descriptions(ops,brbegin,
+                                                         syri_ops,srbegin,
+                                                         rbegin,rend)
+            syri_unsupported += unbacked
+            syri_contradicted += contradicted
         total_skew += skew
         total_dropped += dropped
         used += 1
@@ -441,7 +678,10 @@ def build_cigar(ref_fname, qry_fname, syri_fname, paf_fname=None):
     stats = dict(blocks=len(blocks),used=used,skipped=skipped,
                  skew=total_skew,dropped=total_dropped,inverted=len(inverted),
                  inverted_bp=sum(e - b for b,e in inverted),repaired=repaired,
-                 from_paf=from_paf,from_syri=from_syri,eq_divergence=eq_divergence,
+                 from_aln=from_aln,from_syri=from_syri,eq_divergence=eq_divergence,
+                 matched_intervals=matched_intervals,aln_format=aln_format,
+                 clipped_by_inversion=clipped_by_inversion,merges=merges,
+                 syri_unsupported=syri_unsupported,syri_contradicted=syri_contradicted,
                  qry_header=qry_header)
     return cigar,ref_seq,qry_seq,stats
 
@@ -463,17 +703,30 @@ def verify(cigar, ref_seq, qry_seq):
             q += length
     return r,q,bad_eq,bad_x
 
-USAGE = """usage: syri_to_cigar.py REF.fa QRY.fa SYRI.out ALIGNMENTS.paf OUT_PREFIX
+USAGE = """usage: syri_to_cigar.py [--format FMT] REF.fa QRY.fa SYRI.out ALIGNMENTS OUT_PREFIX
 
 Build a global CIGAR alignment between a reference and a query from SyRI output,
-taking the base-level alignment from the PAF that SyRI was run on.
+taking the base-level alignment from the alignments SyRI was run on.
 
 positional arguments:
-  REF.fa           reference FASTA, single sequence
-  QRY.fa           query FASTA, single sequence
-  SYRI.out         SyRI annotation table, used to classify each alignment
-  ALIGNMENTS.paf   the PAF SyRI was run on; must carry CIGARs in the cg:Z: tag
-  OUT_PREFIX       prefix for the output files, including any directory
+  REF.fa       reference FASTA, single sequence
+  QRY.fa       query FASTA, single sequence
+  SYRI.out     SyRI annotation table, used to classify each alignment
+  ALIGNMENTS   the alignments SyRI was run on, in one of the formats below
+  OUT_PREFIX   prefix for the output files, including any directory
+
+options:
+  --format FMT  paf, delta or coords. Detected from the file if not given.
+  -h, --help    show this message
+
+alignment formats:
+  paf     minimap2 PAF. Needs CIGARs in the cg:Z: tag, which means --eqx or
+          -c; records without one fall back to the SyRI variant records.
+  delta   nucmer .delta. Carries gap positions but not which aligned bases
+          differ, so = and X are resolved against the sequences.
+  coords  show-coords output, padded or -T. Gives only intervals, so every
+          block still takes its alignment from the SyRI variant records; use
+          delta instead if you have it.
 
 output:
   OUT_PREFIX.cigar   the CIGAR, as run-length pairs such as 135=5I6=1X
@@ -489,20 +742,41 @@ operations:
   D  consumes reference only
   I  consumes query only
 
-example:
+examples:
   ./syri_to_cigar.py ref.fa qry.fa syri.out aln.paf out/chr22
+  ./syri_to_cigar.py ref.fa qry.fa syri.out out.delta out/chr22
   writes out/chr22.cigar and out/chr22.qry.fa
 """
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if any(a in ("-h","--help") for a in args) or len(args) != 5:
+    argv = sys.argv[1:]
+    aln_format = None
+    args = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--format" and i + 1 < len(argv):
+            aln_format = argv[i+1]
+            i += 2
+        elif argv[i].startswith("--format="):
+            aln_format = argv[i].split("=",1)[1]
+            i += 1
+        else:
+            args.append(argv[i])
+            i += 1
+
+    if any(a in ("-h","--help") for a in argv) or len(args) != 5:
         sys.stderr.write(USAGE)
-        sys.exit(0 if args and args[0] in ("-h","--help") else 2)
+        sys.exit(0 if any(a in ("-h","--help") for a in argv) else 2)
 
-    ref_fname,qry_fname,syri_fname,paf_fname,out_prefix = args
+    if aln_format is not None and aln_format not in READERS:
+        sys.stderr.write(f"unknown format {aln_format!r}; "
+                         f"expected one of {', '.join(READERS)}\n")
+        sys.exit(2)
 
-    cigar,ref_seq,qry_seq,stats = build_cigar(ref_fname,qry_fname,syri_fname,paf_fname)
+    ref_fname,qry_fname,syri_fname,aln_fname,out_prefix = args
+
+    cigar,ref_seq,qry_seq,stats = build_cigar(ref_fname,qry_fname,syri_fname,
+                                              aln_fname,aln_format)
 
     counts = {}
     for op,length in cigar:
@@ -511,12 +785,25 @@ if __name__ == "__main__":
     r,q,bad_eq,bad_x = verify(cigar,ref_seq,qry_seq)
     ref_len,qry_len = len(ref_seq),len(qry_seq)
 
-    print(f"inverted regions flipped: {stats['inverted']} ({stats['inverted_bp']} bp)",file=sys.stderr)
+    print(f"inverted regions flipped: {stats['inverted']} "
+          f"({stats['inverted_bp']} bp)",file=sys.stderr)
+    if stats['merges']:
+        print(f"  overlapping inverted regions merged: {stats['merges']}",file=sys.stderr)
+    if stats['clipped_by_inversion']:
+        print(f"  query bases clipped from forward blocks reaching into them: "
+              f"{stats['clipped_by_inversion']}",file=sys.stderr)
     print(f"blocks chained: {stats['used']} / {stats['blocks']} "
           f"(dropped as fully overlapping: {stats['skipped']})",file=sys.stderr)
-    print(f"  alignment from PAF: {stats['from_paf']}, "
+    print(f"  alignment from {stats['aln_format'] or 'none'}: {stats['from_aln']}, "
           f"reconstructed from SyRI variants: {stats['from_syri']}",file=sys.stderr)
-    print(f"  '=' disagreement between PAF and SyRI: {stats['eq_divergence']}",file=sys.stderr)
+    if stats['matched_intervals']:
+        print(f"  intervals confirmed but carrying no alignment: "
+              f"{stats['matched_intervals']}",file=sys.stderr)
+    print(f"  '=' disagreement between alignment and SyRI: {stats['eq_divergence']}",file=sys.stderr)
+    print(f"    SyRI-implied matches with no CIGAR support: "
+          f"{stats['syri_unsupported']}",file=sys.stderr)
+    print(f"    CIGAR matches contradicted by a SyRI record: "
+          f"{stats['syri_contradicted']}",file=sys.stderr)
     print(f"variants dropped as overlapping: {stats['dropped']}",file=sys.stderr)
     print(f"internal skew reconciled: {stats['skew']}",file=sys.stderr)
     print(f"runs realigned by repair pass: {stats['repaired']}",file=sys.stderr)
