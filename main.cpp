@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
     double exp_mismatch_frac_between_mum_bp = 0.01;
     SOffset max_gap = max_offset;
 
+    // TODO: don't hard-code this!
     SOffset k = 31;
 
     wfa::WFAligner::MemoryModel heuristics_model = wfa::WFAligner::MemoryLow;
@@ -133,7 +134,7 @@ int main(int argc, char** argv) {
     assert(argc > 3);
     std::ifstream finn(argv[3]);
 
-    auto mummer_ranges = read_mummer(finn, target, theader, query, qheader, query_rc);
+    auto mummer_ranges = read_mummer(finn, target, theader, query, qheader, query_rc, k);
     finn.close();
 
     auto [min_mum_length, total_mum_length] = std::accumulate(

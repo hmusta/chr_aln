@@ -41,7 +41,8 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                                        std::string &theader,
                                        std::string &query,
                                        std::string &qheader,
-                                       std::string &query_rc) {
+                                       std::string &query_rc,
+                                       SOffset min_len) {
     std::vector<Ranges> output;
     std::string line;
 
@@ -75,11 +76,6 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
             --rbegin;
             --qbegin;
 
-            assert(static_cast<size_t>(rbegin) < target.size());
-            assert(static_cast<size_t>(rbegin + len) <= target.size());
-            assert(static_cast<size_t>(qbegin) < query.size());
-            assert(static_cast<size_t>(qbegin + len) <= query.size());
-
             if (qrc) {
                 // match is [query.size() - qbegin - 1, query.size() - qbegin - 1 + len) in query_rc
                 // so [qbegin - len + 1, qbegin + 1) in query
@@ -87,13 +83,30 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                 qbegin -= len - 1;
             }
 
-            output.emplace_back(rbegin, rbegin + len, false, qbegin, qbegin + len, qrc);
-            assert(output.back().check_equal(target, query, query_rc));
+            Offset rend = rbegin + len;
+            Offset qend = qbegin + len;
+
+            assert(static_cast<size_t>(rbegin) < target.size());
+            assert(rend <= target.size());
+            assert(static_cast<size_t>(qbegin) < query.size());
+            assert(qend <= query.size());
+
+            Ranges range(rbegin, rend, false, qbegin, qend, qrc);
+            assert(range.check_equal(target, query, query_rc));
             #ifdef NDEBUG
             std::ignore = target;
             std::ignore = query;
             std::ignore = query_rc;
             #endif
+
+            if (len < min_len) {
+                assert(rend == target.size() || qend == query.size());
+                std::cerr << "WARNING: removing short match at the end\n"
+                          << range
+                          << std::endl;
+            }
+
+            output.emplace_back(std::move(range));
         };
 
         std::istringstream sin(line);
