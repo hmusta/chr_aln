@@ -29,14 +29,11 @@ total_length_short_indels_a = 0
 total_length_short_indels_b = 0
 nchrom = 0
 
-#print("chr\tdist\tid\tlength a\tlength b\tid frac. match\tid frac. sh.\tid frac.\tmax diag.")
-#print("chr\tid frac. match\tid frac. sh.\tid frac.\tmax diag.\trefL\trefN\tqryL\tqryN")
-
 check_N = bool(int(sys.argv[1]))
 check_eq = bool(int(sys.argv[2]))
 print(check_eq,check_N,file=sys.stderr)
-nins = 4
-args_iter = list(itertools.zip_longest(*[iter(sys.argv[3:])]*nins))
+ncols = 4
+args_iter = list(itertools.zip_longest(*[iter(sys.argv[3:])]*ncols))
 for ref_fname, query_fname, fname, inv_bed in args_iter:
     name = fname.split("/")[-1].split(".")[0]
     print(name,file=sys.stderr)
@@ -181,8 +178,6 @@ for ref_fname, query_fname, fname, inv_bed in args_iter:
     minlen = min(length,length_q)
     maxlen = max(length,length_q)
     print(f"{name[3:]}\t{full_length}->{length}\t{full_length_q}->{length_q}\t{cur_id}\t{100*cur_id/maxlen:.2f}\t{100*cur_id/minlen:.2f}")
-    #print(f"{name[3:].rjust(3)}\t{(cur_id / cur_matches):.5f}\t{id_sh_indels_min:.5f}-{id_sh_indels_max:.5f}\t{id_frac_min:.5f}-{id_frac_max:.5f}\t{max_diag} / {final_diag}\t{length}\t{ref_N}\t{length_q}\t{query_N}")
-    #print(f"{name[3:].rjust(3)}\t{dist}\t{cur_id}\t{length}\t{length_q}\t{(cur_id / cur_matches):.3f}\t{id_sh_indels_min:.3f}-{id_sh_indels_max:.3f}\t{id_frac_min:.3f}-{id_frac_max:.3f}\t{max_diag} / {final_diag}")
 
     total_full_length_a += full_length
     total_full_length_b += full_length_q
@@ -200,15 +195,3 @@ if nchrom > 1:
     minlen=min(total_length_a,total_length_b)
     maxlen=max(total_length_a,total_length_b)
     print(f"{fullname}\t{total_full_length_a}->{total_length_a}\t{total_full_length_b}->{total_length_b}\t{total_id}\t{100*total_id/maxlen:.2f}\t{100*total_id/minlen:.2f}")
-#    print(
-#        f"total dist: {total_dist}\n" + \
-#        f"total id: {total_id}\n" + \
-#        f"total matches: {total_matches}\n" + \
-#        f"total length a: {total_length_a}\n" + \
-#        f"total length b: {total_length_b}\n" + \
-#        f"id frac. match: {(total_id / total_matches):.5f}\n" + \
-#        f"id frac. sh. a: {(total_id / total_length_short_indels_a):.5f}\n" + \
-#        f"id frac. sh. b: {(total_id / total_length_short_indels_b):.5f}\n" + \
-#        f"id frac. a: {(total_id / total_length_a):.5f}\n" + \
-#        f"id frac. b: {(total_id / total_length_b):.5f}" \
-#        )
