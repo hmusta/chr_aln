@@ -104,6 +104,7 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                 std::cerr << "WARNING: removing short match at the end\n"
                           << range
                           << std::endl;
+                return;
             }
 
             output.emplace_back(std::move(range));
