@@ -112,23 +112,23 @@ int main(int argc, char** argv) {
     assert(argc > 5);
     bool check_inversions = std::atoi(argv[5]);
 
+    assert(argc > 6);
+    std::string chain_out(argv[6]);
+
     bool check_rc = false;
-    if (argc > 6) {
-        check_rc = std::atoi(argv[6]);
+    if (argc > 7) {
+        check_rc = std::atoi(argv[7]);
     }
 
     bool force_less_heuristics = false;
-    if (argc > 7) {
-        force_less_heuristics = std::atoi(argv[7]);
+    if (argc > 8) {
+        force_less_heuristics = std::atoi(argv[8]);
     }
 
     auto check_if_heuristics = [&force_less_heuristics,
                                 &heuristics_length_cutoff](SOffset qlen, SOffset tlen) -> bool {
         return !force_less_heuristics && (qlen + tlen > heuristics_length_cutoff);
     };
-
-    assert(argc > 6);
-    std::string chain_out(argv[6]);
 
     std::cout << "Parsing MUMmer\n";
     assert(argc > 3);
