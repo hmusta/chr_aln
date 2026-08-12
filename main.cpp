@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
     auto [query, qheader] = read_fasta(finq);
     finq.close();
 
-    Diag target_diag = static_cast<Diag>(target.size()) - static_cast<Diag>(query.size());
+    Diag target_diag = static_cast<ssize_t>(target.size()) - static_cast<ssize_t>(query.size());
 
     ScoreModel score_model(1, -9, -16, -2, -41, -1, -41, 0);
 
@@ -278,11 +278,11 @@ int main(int argc, char** argv) {
             SOffset num = 0;
             SOffset nmismatch = 0;
             char last_op = N_OP;
-            for (size_t i = 0; i < query_w.size(); ++i) {
+            for (size_t j = 0; j < query_w.size(); ++j) {
                 char cur_op = EQ_OP;
-                if (query_w[i] == 'N' || target_w[i] == 'N') {
+                if (query_w[j] == 'N' || target_w[j] == 'N') {
                     cur_op = MATCH_OP;
-                } else if (query_w[i] != target_w[i]) {
+                } else if (query_w[j] != target_w[j]) {
                     cur_op = NEQ_OP;
                 }
                 if (cur_op != last_op) {
@@ -365,66 +365,95 @@ int main(int argc, char** argv) {
                 return;
 
             size_t skipped = 0;
-            while (skipped < query_w.size() && skipped < target_w.size()
-                   && (query_w[skipped] == 'N' || target_w[skipped] == 'N')) {
-                ++skipped;
-            }
-            query_w.remove_prefix(skipped);
-            target_w.remove_prefix(skipped);
-            qi += skipped;
-            ti += skipped;
             assert(local_cigar.empty());
-            if (skipped) {
-                local_cigar.push(MATCH_OP, skipped);
-            }
+            while (query_w.size() && target_w.size()) {
+                size_t skip_N = std::mismatch(query_w.begin(), query_w.end(), target_w.begin(), target_w.end(),
+                                              [](char q, char t) { return q == 'N' || t == 'N'; }).first - query_w.begin();
 
-            Score front_eq = std::mismatch(query_w.begin(), query_w.end(), target_w.begin(), target_w.end()).first - query_w.begin();
-            if (front_eq) {
-                query_w.remove_prefix(front_eq);
-                target_w.remove_prefix(front_eq);
-                qi += front_eq;
-                ti += front_eq;
-                local_cigar.push(EQ_OP, front_eq);
+                if (skip_N) {
+                    query_w.remove_prefix(skip_N);
+                    target_w.remove_prefix(skip_N);
+                    qi += skip_N;
+                    ti += skip_N;
+                    local_cigar.push(MATCH_OP, skip_N);
+                    skipped += skip_N;
+                }
+
+                size_t front_eq = std::mismatch(query_w.begin(), query_w.end(), target_w.begin(), target_w.end(),
+                                                [](char q, char t) { return q == t && q != 'N' && t != 'N'; }).first - query_w.begin();
+                if (front_eq) {
+                    query_w.remove_prefix(front_eq);
+                    target_w.remove_prefix(front_eq);
+                    qi += front_eq;
+                    ti += front_eq;
+                    local_cigar.push(EQ_OP, front_eq);
+                    skipped += front_eq;
+                    local_score += score_model.match_s * static_cast<Score>(front_eq);
+                }
+
+                if (!skip_N && !front_eq)
+                    break;
             }
 
             size_t back_skipped = 0;
-            while (back_skipped < query_w.size() && back_skipped < target_w.size()
-                   && (query_w[query_w.size() - back_skipped - 1] == 'N'
-                       || target_w[target_w.size() - back_skipped - 1] == 'N')) {
-                ++back_skipped;
-            }
-            query_w.remove_suffix(back_skipped);
-            target_w.remove_suffix(back_skipped);
+            Cigar back_cigar;
+            while (query_w.size() && target_w.size()) {
+                size_t skip_N = std::mismatch(query_w.rbegin(), query_w.rend(), target_w.rbegin(), target_w.rend(),
+                                              [](char q, char t) { return q == 'N' || t == 'N'; }).first - query_w.rbegin();
 
-            local_score += score_model.match_s * static_cast<Score>(skipped + back_skipped + front_eq);
+                if (skip_N) {
+                    query_w.remove_suffix(skip_N);
+                    target_w.remove_suffix(skip_N);
+                    back_cigar.push(MATCH_OP, skip_N);
+                    back_skipped += skip_N;
+                }
+
+                size_t back_eq = std::mismatch(query_w.rbegin(), query_w.rend(), target_w.rbegin(), target_w.rend(),
+                                               [](char q, char t) { return q == t && q != 'N' && t != 'N'; }).first - query_w.rbegin();
+                if (back_eq) {
+                    query_w.remove_suffix(back_eq);
+                    target_w.remove_suffix(back_eq);
+                    back_cigar.push(EQ_OP, back_eq);
+                    back_skipped += back_eq;
+                    local_score += score_model.match_s * static_cast<Score>(back_eq);
+                }
+
+                if (!skip_N && !back_eq)
+                    break;
+            }
+            std::reverse(back_cigar.begin(), back_cigar.end());
 
             bool use_heuristics = false;
             bool to_print = false;
 
             auto print = [&]() {
-                SOffset prev_exact_match_length = 0;
-                {
-                    assert(i);
-                    const auto& [rbegin, rend, rorientation, qbegin, qend, qorientation,
-                                 left_trim, right_trim] = best_chain[i - 1];
-                    assert(rend - rbegin == qend - qbegin);
-                    prev_exact_match_length = rend - rbegin;
-                }
+                // TODO: disabled for now
+                std::ignore = mum_length;
+                std::ignore = exact_match_length;
+                std::ignore = qorientation_last;
+                // SOffset prev_exact_match_length = 0;
+                // {
+                //     assert(i);
+                //     const auto& [rbegin, rend, rorientation, qbegin, qend, qorientation,
+                //                  left_trim, right_trim] = best_chain[i - 1];
+                //     assert(rend - rbegin == qend - qbegin);
+                //     prev_exact_match_length = rend - rbegin;
+                // }
 
-                std::lock_guard<std::mutex> print_lock(mu);
-                std::cout << "Continue run: i: " << i << " / " << best_chain.size() << "\t"
-                          << "h: " << use_heuristics << "\t"
-                          << "o: " << qorientation_last << "\t"
-                          << ti - prev_exact_match_length + 1 << ":"
-                          << qi - prev_exact_match_length + 1 << " ("
-                          << prev_exact_match_length << ")\t"
-                          << front_eq << "\t"
-                          << ti + 1 << "-"
-                          << ti + target_w.size() << " (" << target_w.size() << ")\t"
-                          << qi + 1 << "-" << qi + query_w.size() << " (" << query_w.size()
-                          << ")\t" << ti + target_w.size() + exact_match_length << ":"
-                          << qi + query_w.size() + exact_match_length << " ("
-                          << exact_match_length << ")\t" << mum_length << std::endl;
+                // std::lock_guard<std::mutex> print_lock(mu);
+                // std::cout << "Continue run: i: " << i << " / " << best_chain.size() << "\t"
+                //           << "h: " << use_heuristics << "\t"
+                //           << "o: " << qorientation_last << "\t"
+                //           << ti - prev_exact_match_length + 1 << ":"
+                //           << qi - prev_exact_match_length + 1 << " ("
+                //           << prev_exact_match_length << ")\t"
+                //           << front_eq << "\t"
+                //           << ti + 1 << "-"
+                //           << ti + target_w.size() << " (" << target_w.size() << ")\t"
+                //           << qi + 1 << "-" << qi + query_w.size() << " (" << query_w.size()
+                //           << ")\t" << ti + target_w.size() + exact_match_length << ":"
+                //           << qi + query_w.size() + exact_match_length << " ("
+                //           << exact_match_length << ")\t" << mum_length << std::endl;
             };
 
             if (target_w.empty()) {
@@ -447,6 +476,7 @@ int main(int argc, char** argv) {
                             || std::max(query_w.size(), target_w.size())
                                     > long_seq_length_cutoff);
 
+                // TODO: keeping this always true for debugging
                 to_print = true;
 
                 if (to_print)
@@ -461,14 +491,11 @@ int main(int argc, char** argv) {
                     local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                 } else if (use_heuristics) {
                     Cigar cigar = repeat_aligner(std::string(query_w), std::string(target_w));
-                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                     SeqPair view_pair(query_w, target_w);
-                    local_score += score_cigar(local_cigar, view_pair, score_model);
+                    local_score += score_cigar(cigar, view_pair, score_model);
+                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                 } else {
-                    auto aligner = make_aligner(score_model, use_heuristics ? heuristics_model : main_model);
-                    if (use_heuristics && max_dist < std::numeric_limits<SOffset>::max()) {
-                        aligner->setHeuristicWFadaptive(min_wavefront_length, std::min<SOffset>(max_dist, query_w.size()), 1);
-                    }
+                    auto aligner = make_aligner(score_model, main_model);
                     check_lengths(*aligner, score_model.max_pen, query_w.size() + target_w.size());
 
                     SeqPair view_pair(query_w, target_w);
@@ -496,15 +523,18 @@ int main(int argc, char** argv) {
             }
 
             if (skipped || back_skipped) {
-                std::cout << "\n\nShrunk range: " << ti + 1 - skipped << "-"
-                          << ti + target_w.size() + back_skipped << " x "
-                          << qi + 1 - skipped << "-" << qi + query_w.size() + back_skipped
-                          << " to " << ti + 1 << "-" << ti + target_w.size() << " x "
-                          << qi + 1 << "-" << qi + query_w.size() << "\n\n"
-                          << std::endl;
+                {
+                    std::lock_guard<std::mutex> print_lock(mu);
+                    std::cout << "\n\nShrunk range: " << ti + 1 - skipped << "-"
+                            << ti + target_w.size() + back_skipped << " x "
+                            << qi + 1 - skipped << "-" << qi + query_w.size() + back_skipped
+                            << " to " << ti + 1 << "-" << ti + target_w.size() << " x "
+                            << qi + 1 << "-" << qi + query_w.size() << "\n\n"
+                            << std::endl;
+                }
 
-                if (back_skipped)
-                    local_cigar.push(MATCH_OP, back_skipped);
+                if (!back_cigar.empty())
+                    local_cigar.insert(local_cigar.end(), std::make_move_iterator(back_cigar.begin()), std::make_move_iterator(back_cigar.end()));
             }
 
             if (to_print)

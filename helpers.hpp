@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -52,13 +53,13 @@ static const unsigned char seq_ntext_table[256]
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15 };
 
-inline char sanitize_nuc(char c) {
+inline char sanitize_nuc(unsigned char c) {
     c = std::toupper(c);
-    assert(seq_ntext_table[static_cast<int8_t>(c)] <= alph_size_ext);
-    if (seq_ntext_table[static_cast<int8_t>(c)] >= alph_size_ext)
+    assert(seq_ntext_table[c] <= alph_size_ext);
+    if (seq_ntext_table[c] >= alph_size_ext)
         c = 'N';
 
-    assert(seq_ntext_table[static_cast<int8_t>(c)] < alph_size_ext);
+    assert(seq_ntext_table[c] < alph_size_ext);
     return c;
 }
 
@@ -71,9 +72,9 @@ inline char orientation_to_char(bool orientation) {
 }
 
 struct nuc_cmp_n_eq {
-    bool operator()(char a, char b) const {
-        assert(seq_ntext_table[static_cast<int8_t>(a)] < alph_size_ext);
-        assert(seq_ntext_table[static_cast<int8_t>(b)] < alph_size_ext);
+    bool operator()(unsigned char a, unsigned char b) const {
+        assert(seq_ntext_table[a] < alph_size_ext);
+        assert(seq_ntext_table[b] < alph_size_ext);
         return a == b || a == 'N' || b == 'N';
     }
 };
@@ -140,6 +141,138 @@ inline bool has_large_gap(std::string_view query,
 
     return n_count >= cutoff;
 }
+
+struct Ranges {
+    Ranges(SOffset rb, SOffset re, bool ro, SOffset qb, SOffset qe, bool qo, SOffset lt = 0, SOffset rt = 0)
+        : rbegin(rb), rend(re), rorientation(ro),
+          qbegin(qb), qend(qe), qorientation(qo),
+          left_trim(lt), right_trim(rt) { assert_valid(); }
+
+    static_assert(std::is_same_v<SOffset, std::make_signed_t<SOffset>>);
+    SOffset rbegin;
+    SOffset rend;
+    bool rorientation;
+    SOffset qbegin;
+    SOffset qend;
+    bool qorientation;
+    SOffset left_trim;
+    SOffset right_trim;
+
+    size_t size() const {
+        assert_valid();
+        return rend - rbegin;
+    }
+
+    Diag diag() const {
+        assert_valid();
+        return rend - qend;
+    }
+
+    void assert_valid(bool allow_empty = true) const {
+        assert(!rorientation);
+        assert(rbegin >= 0);
+        assert(qbegin >= 0);
+        assert(rbegin <= rend);
+        assert(allow_empty || rbegin < rend);
+        assert(qbegin <= qend);
+        assert(allow_empty || qbegin < qend);
+        assert(rend - rbegin == qend - qbegin);
+
+        #ifdef NDEBUG
+        std::ignore = allow_empty;
+        #endif
+    }
+
+    void shift_start(size_t target_shift, size_t query_shift) {
+        assert_valid();
+        rbegin += target_shift;
+        rend += target_shift;
+        qbegin += query_shift;
+        qend += query_shift;
+        assert_valid();
+    }
+
+    void trim_prefix(size_t trim, bool allow_empty = true) {
+        assert_valid();
+        assert(trim <= size());
+        if (trim > 0) {
+            rbegin += trim;
+            if (qorientation) {
+                qend -= trim;
+            } else {
+                qbegin += trim;
+            }
+            assert_valid(allow_empty);
+            left_trim += trim;
+        }
+    }
+
+    void trim_suffix(size_t trim, bool allow_empty = true) {
+        assert_valid();
+        assert(trim <= size());
+        if (trim > 0) {
+            rend -= trim;
+            if (qorientation) {
+                qbegin += trim;
+            } else {
+                qend -= trim;
+            }
+            assert_valid(allow_empty);
+            right_trim += trim;
+        }
+    }
+
+    std::string_view get_seq_from_target(std::string_view target) const {
+        assert_valid();
+        assert(rbegin + size() <= target.size());
+        return std::string_view(target.data() + rbegin, size());
+    }
+
+    std::string_view get_seq_from_query(std::string_view query,
+                                        std::string_view query_rc) const {
+        assert_valid();
+        assert(qorientation || qbegin + size() <= query.size());
+        assert(!qorientation || static_cast<ssize_t>(query_rc.size()) >= qend);
+        assert(!qorientation || query_rc.size() - qend + size() <= query_rc.size());
+        return std::string_view(!qorientation
+                                        ? query.data() + qbegin
+                                        : query_rc.data() + query_rc.size() - qend,
+                                 size());
+    }
+
+    bool check_equal(std::string_view target,
+                     std::string_view query,
+                     std::string_view query_rc) const {
+        assert_valid();
+        return get_seq_from_target(target) == get_seq_from_query(query, query_rc);
+    }
+};
+
+inline bool operator<(const Ranges &a, const Ranges &b) {
+    bool in_inv = a.qorientation && b.qorientation;
+
+    return std::tie(a.rend, a.rbegin, !in_inv ? a.qend : b.qbegin, !in_inv ? a.qbegin : b.qend)
+         < std::tie(b.rend, b.rbegin, !in_inv ? b.qend : a.qbegin, !in_inv ? b.qbegin : a.qend);
+}
+
+inline bool operator==(const Ranges &a, const Ranges &b) {
+    return std::tie(a.rbegin, a.rend, a.rorientation, a.qbegin, a.qend, a.qorientation)
+            == std::tie(b.rbegin, b.rend, b.rorientation, b.qbegin, b.qend, b.qorientation);
+}
+
+inline std::ostream& operator<<(std::ostream &out, const Ranges &a) {
+    out << orientation_to_char(a.rorientation) << " "
+        << a.rbegin + 1 << "-" << a.rend << "\t"
+        << orientation_to_char(a.qorientation) << " "
+        << a.qbegin + 1 << "-" << a.qend << "\t"
+        << a.size() << "(" << a.left_trim << "," << a.right_trim << ")\t"
+        << a.rend - a.qend;
+
+    return out;
+}
+
+std::vector<Ranges> rc_ranges(const std::vector<Ranges>& mummer_ranges,
+                              SOffset query_size);
 
 
 struct ScoreModel {
@@ -242,7 +375,7 @@ struct ScoreModel {
 
         if (gap_open_s != gap_open2_s || gap_ext_s != gap_ext2_s) {
             model_type = ModelType::GAP_2P_AFFINE;
-        } else if (gap_open_s > 0) {
+        } else if (gap_open_s < 0) {
             model_type = ModelType::GAP_AFFINE;
         } else {
             model_type = ModelType::GAP_LINEAR;

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <istream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,9 +46,17 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                                        SOffset min_len) {
     std::vector<Ranges> output;
     std::string line;
+    size_t line_number = 0;
 
     bool qrc = false;
     while (std::getline(fin, line)) {
+        ++line_number;
+
+        // MUMmer output ends with a newline, so the last getline yields an
+        // empty line; skip those rather than treating them as records
+        if (line.find_first_not_of(" \t\r") == std::string::npos)
+            continue;
+
         if (line[0] == '>') {
             auto rev_idx = line.rfind("Reverse");
             bool is_rev = (rev_idx != std::string::npos);
@@ -110,12 +119,22 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
             output.emplace_back(std::move(range));
         };
 
+        // Read into signed values so that a negative field is rejected rather
+        // than wrapping to a huge unsigned one, which parses "successfully".
         std::istringstream sin(line);
-        Offset rbegin;
-        Offset qbegin;
-        Offset len;
+        SOffset rbegin = 0;
+        SOffset qbegin = 0;
+        SOffset len = 0;
 
-        sin >> rbegin >> qbegin >> len;
+        if (!(sin >> rbegin >> qbegin >> len)) {
+            throw std::runtime_error("malformed MUM on line "
+                                     + std::to_string(line_number) + ": " + line);
+        }
+
+        if (rbegin <= 0 || qbegin <= 0 || len <= 0) {
+            throw std::runtime_error("MUM coordinates must be positive on line "
+                                     + std::to_string(line_number) + ": " + line);
+        }
 
         add_mum(rbegin, qbegin, len);
     }

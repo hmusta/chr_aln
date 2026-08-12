@@ -123,6 +123,8 @@ add_executable(unit_tests
     tests/test_wfa.cpp
     tests/test_chaining.cpp
     tests/test_seeding.cpp
+    tests/test_cigar.cpp
+    tests/test_other.cpp
 )
 
 target_compile_options(unit_tests PRIVATE -Werror)

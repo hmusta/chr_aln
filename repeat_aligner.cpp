@@ -129,7 +129,7 @@ void call_mums(std::string_view query,
 
     auto prepare_str = [](std::string_view strview, bool nucleotides_only = true) {
         std::string str(strview);
-        std::transform(str.begin(), str.end(), str.begin(), [nucleotides_only](char c) {
+        std::transform(str.begin(), str.end(), str.begin(), [nucleotides_only](unsigned char c) {
             c = std::tolower(c);
             if (nucleotides_only) {
                 switch (c) {
@@ -178,7 +178,7 @@ void call_mums(std::string_view query,
                                      sparseMult, kmer, printSubstring, nucleotidesOnly);
     sa.construct();
 
-    if (query.size() >= min_length) {
+    if (query_str.size() >= min_length) {
         sa.findMAM_each(query_str.data(), query_str.size(), min_length, false, [&](const auto& m) {
             assert(m.len);
             Ranges mum(m.ref + tbegin, m.ref + m.len + tbegin, false,
@@ -188,7 +188,7 @@ void call_mums(std::string_view query,
         });
     }
 
-    if (query_rc.size() >= min_length) {
+    if (query_rc_str.size() >= min_length) {
         sa.findMAM_each(query_rc_str.data(), query_rc_str.size(), min_length, false, [&](const auto& m) {
             assert(m.len);
             Ranges rc_mum(m.ref + tbegin, m.ref + m.len + tbegin, false,

@@ -162,7 +162,7 @@ class MonotoneDiagonalProfile {
             // there may be an it s.t. it->q1 > (it + 1)->q2
 
             // find the first record where (b >= r.q2) is true <=> (b < r.q2) is false
-            const auto it = std::lower_bound(
+            auto it = std::lower_bound(
                 records_.cbegin(), records_.cend(), b,
                 [](const record_type& r, SOffset value) { return value < r.q2; });
 

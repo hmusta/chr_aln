@@ -9,7 +9,7 @@
 
 using namespace std::chrono_literals;
 
-std::jthread start_profiler_flusher(std::chrono::milliseconds period = 250ms) {
+inline std::jthread start_profiler_flusher(std::chrono::milliseconds period = 250ms) {
     return std::jthread([period](std::stop_token st) {
         std::mutex m;
         std::condition_variable_any cv;

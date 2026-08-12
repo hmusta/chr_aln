@@ -225,7 +225,7 @@ class WFAIterator {
                     return true;
 
                 return wf_width >= min_wf_len_
-                            && static_cast<Diag>(q + t + max_dist_) < frp_q_ + frp_t_;
+                            && static_cast<SOffset>(q + t + max_dist_) < frp_q_ + frp_t_;
             }
         );
 
