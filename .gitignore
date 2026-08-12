@@ -73,3 +73,5 @@ scratch/
 
 # pycache
 scripts/__pycache__/
+scripts/compute_edit_distance
+scripts/syri_to_cigar
