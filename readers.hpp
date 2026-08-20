@@ -109,8 +109,7 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
             #endif
 
             if (len < min_len) {
-                assert(rend == target.size() || qend == query.size());
-                std::cerr << "WARNING: removing short match at the end\n"
+                std::cerr << "WARNING: removing short match:\t"
                           << range
                           << std::endl;
                 return;

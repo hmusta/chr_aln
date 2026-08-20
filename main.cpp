@@ -430,7 +430,6 @@ int main(int argc, char** argv) {
                 // TODO: disabled for now
                 std::ignore = mum_length;
                 std::ignore = exact_match_length;
-                std::ignore = qorientation_last;
                 // SOffset prev_exact_match_length = 0;
                 // {
                 //     assert(i);
@@ -440,20 +439,22 @@ int main(int argc, char** argv) {
                 //     prev_exact_match_length = rend - rbegin;
                 // }
 
-                // std::lock_guard<std::mutex> print_lock(mu);
-                // std::cout << "Continue run: i: " << i << " / " << best_chain.size() << "\t"
-                //           << "h: " << use_heuristics << "\t"
-                //           << "o: " << qorientation_last << "\t"
+                std::lock_guard<std::mutex> print_lock(mu);
+                std::cout << "Continue run: i: " << i << " / " << best_chain.size() << "\t"
+                           << "h: " << use_heuristics << "\t"
+                           << "o: " << qorientation_last << "\t"
                 //           << ti - prev_exact_match_length + 1 << ":"
                 //           << qi - prev_exact_match_length + 1 << " ("
                 //           << prev_exact_match_length << ")\t"
                 //           << front_eq << "\t"
-                //           << ti + 1 << "-"
-                //           << ti + target_w.size() << " (" << target_w.size() << ")\t"
-                //           << qi + 1 << "-" << qi + query_w.size() << " (" << query_w.size()
-                //           << ")\t" << ti + target_w.size() + exact_match_length << ":"
+                           << ti + 1 << "-"
+                           << ti + target_w.size() << " (" << target_w.size() << ")\t"
+                           << qi + 1 << "-" << qi + query_w.size() << " (" << query_w.size()
+                           << ")\t"
+                //           << ti + target_w.size() + exact_match_length << ":"
                 //           << qi + query_w.size() + exact_match_length << " ("
-                //           << exact_match_length << ")\t" << mum_length << std::endl;
+                //           << exact_match_length << ")\t" << mum_length
+                           << std::endl;
             };
 
             if (target_w.empty()) {
