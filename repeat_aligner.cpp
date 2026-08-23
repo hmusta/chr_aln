@@ -19,7 +19,7 @@ get_alignment(wfa::WFAligner& aligner,
     Cigar cigar;
     if (query.size() && target.size()) {
         if (static_cast<SOffset>(query.size() + target.size()) >= heuristics_length_cutoff) {
-            cigar = repeat_aligner(std::string(query), std::string(target));
+            cigar = repeat_aligner(aligner, std::string(query), std::string(target));
         } else {
             if (min_k == min_diag && max_k == max_diag) {
                 aligner.setHeuristicNone();
@@ -61,8 +61,9 @@ get_alignment(wfa::WFAligner& aligner,
     return std::make_pair(score, std::move(cigar));
 }
 
-Cigar repeat_aligner(const std::string &query,
-                           const std::string &target) {
+Cigar repeat_aligner(wfa::WFAligner& aligner,
+                     const std::string &query,
+                     const std::string &target) {
     tandem_aligner::Cigar ta_cigar;
     std::queue<tandem_aligner::MinSeqTask> queue;
     queue.push({
@@ -85,17 +86,149 @@ Cigar repeat_aligner(const std::string &query,
                    false, false);
         queue.pop();
     }
+
     ta_cigar.AssertValidity(target, query);
+    // ta.AssignMismatches(
+    //     ta_cigar,
+    //     target,
+    //     query
+    // );
+    // std::ostringstream sout;
+    // sout << ta_cigar;
+    // return cigar_fix_n(Cigar(sout.str()), target, query);
 
-    ta.AssignMismatches(
-        ta_cigar,
-        target,
-        query
-    );
+    Cigar cigar;
 
-    std::ostringstream sout;
-    sout << ta_cigar;
-    return cigar_fix_n(Cigar(sout.str()), target, query);
+    auto push_meqx = [&](std::string_view target_w, std::string_view query_w) {
+        assert(target_w.size() == query_w.size());
+        for (size_t i = 0; i < target_w.size(); ++i) {
+            if (target_w[i] == 'N' || query_w[i] == 'N') {
+                cigar.push(MATCH_OP, 1, true);
+            } else {
+                cigar.push(target_w[i] == query_w[i] ? EQ_OP : NEQ_OP, 1, true);
+            }
+        }
+    };
+
+    if (ta_cigar.Size() >= 2) {
+        size_t target_i = 0;
+        size_t query_i = 0;
+        auto last = ta_cigar.begin();
+        auto cur = ta_cigar.begin();
+        for (++cur; cur != ta_cigar.end(); ++cur, ++last) {
+            size_t length = last->length;
+            switch (last->mode) {
+                case tandem_aligner::CigarMode::M:
+                case tandem_aligner::CigarMode::X: {
+                    assert(target_i + length <= target.size());
+                    assert(query_i + length <= query.size());
+                    std::string_view target_w(target.c_str() + target_i, length);
+                    std::string_view query_w(query.c_str() + query_i, length);
+                    push_meqx(target_w, query_w);
+                    target_i += length;
+                    query_i += length;
+                } break;
+                case tandem_aligner::CigarMode::I:
+                case tandem_aligner::CigarMode::D: {
+                    switch (cur->mode) {
+                        case tandem_aligner::CigarMode::I:
+                        case tandem_aligner::CigarMode::D: {
+                            // replace both with an alignment
+                            size_t query_delta = (last->mode == tandem_aligner::CigarMode::I) * last->length
+                                                    + (cur->mode == tandem_aligner::CigarMode::I) * cur->length;
+                            size_t target_delta = (last->mode == tandem_aligner::CigarMode::D) * last->length
+                                                    + (cur->mode == tandem_aligner::CigarMode::D) * cur->length;
+                            assert(query_i + query_delta <= query.size());
+                            assert(target_i + target_delta <= target.size());
+                            std::string_view target_w(target.c_str() + target_i, target_delta);
+                            std::string_view query_w(query.c_str() + query_i, query_delta);
+                            SeqPair view_pair(query_w, target_w);
+                            aligner.setHeuristicNone();
+                            aligner.alignEnd2End(match_char, &view_pair, query_w.size(), target_w.size());
+                            assert(aligner.getAlignmentStatus() == wfa::WFAligner::StatusAlgCompleted);
+                            std::string base_cigar = aligner.getCIGAR(true);
+                            auto local_cigar = cigar_fix_n(Cigar(base_cigar), target_w, query_w);
+                            cigar.insert(
+                                cigar.end(),
+                                std::make_move_iterator(local_cigar.begin()),
+                                std::make_move_iterator(local_cigar.end())
+                            );
+                            query_i += query_delta;
+                            target_i += target_delta;
+                            ++last;
+                            ++cur;
+                        } break;
+                        default: {
+                            if (last->mode == tandem_aligner::CigarMode::I) {
+                                assert(query_i + length <= query.size());
+                                cigar.push(QUERY_CONSUME_OP, length, true);
+                                query_i += length;
+                            } else if (last->mode == tandem_aligner::CigarMode::D) {
+                                assert(target_i + length <= target.size());
+                                cigar.push(TARGET_CONSUME_OP, length, true);
+                                target_i += length;
+                            } else {
+                                assert(false && "This should not happen");
+                            }
+                        } break;
+                    }
+                } break;
+            }
+
+            if (cur == ta_cigar.end()) {
+                ++last;
+                assert(last == ta_cigar.end());
+                break;
+            }
+        }
+
+        if (last != ta_cigar.end()) {
+            size_t length = last->length;
+            switch (last->mode) {
+                case tandem_aligner::CigarMode::M:
+                case tandem_aligner::CigarMode::X: {
+                    assert(target_i + length <= target.size());
+                    assert(query_i + length <= query.size());
+                    std::string_view target_w(target.c_str() + target_i, length);
+                    std::string_view query_w(query.c_str() + query_i, length);
+                    push_meqx(target_w, query_w);
+                    target_i += length;
+                    query_i += length;
+                } break;
+                case tandem_aligner::CigarMode::I: {
+                    assert(query_i + length <= query.size());
+                    cigar.push(QUERY_CONSUME_OP, length, true);
+                    query_i += length;
+                } break;
+                case tandem_aligner::CigarMode::D: {
+                    assert(target_i + length <= target.size());
+                    cigar.push(TARGET_CONSUME_OP, length, true);
+                    target_i += length;
+                } break;
+            }
+        }
+
+    } else if (ta_cigar.Size()) {
+        size_t length = ta_cigar.begin()->length;
+        switch (ta_cigar.begin()->mode) {
+            case tandem_aligner::CigarMode::M:
+            case tandem_aligner::CigarMode::X: {
+                assert(target.size() == length);
+                assert(query.size() == length);
+                push_meqx(target, query);
+            } break;
+            case tandem_aligner::CigarMode::I: {
+                assert(query.size() == length);
+                cigar.push(QUERY_CONSUME_OP, length, true);
+            } break;
+            case tandem_aligner::CigarMode::D: {
+                assert(target.size() == length);
+                cigar.push(TARGET_CONSUME_OP, length, true);
+            } break;
+        }
+    }
+
+    return cigar;
 }
 
 void call_mums(std::string_view query,

@@ -9,7 +9,9 @@
 
 #include <bindings/cpp/WFAligner.hpp>
 
-Cigar repeat_aligner(const std::string &query, const std::string &target);
+Cigar repeat_aligner(wfa::WFAligner& aligner,
+                     const std::string &query,
+                     const std::string &target);
 
 void call_mums(std::string_view query,
                std::string_view query_rc,

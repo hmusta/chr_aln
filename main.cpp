@@ -491,7 +491,9 @@ int main(int argc, char** argv) {
                     local_score += aln_score;
                     local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
                 } else if (use_heuristics) {
-                    Cigar cigar = repeat_aligner(std::string(query_w), std::string(target_w));
+                    auto aligner
+                            = make_aligner(score_model, main_model);
+                    Cigar cigar = repeat_aligner(*aligner, std::string(query_w), std::string(target_w));
                     SeqPair view_pair(query_w, target_w);
                     local_score += score_cigar(cigar, view_pair, score_model);
                     local_cigar.insert(local_cigar.end(), std::make_move_iterator(cigar.begin()), std::make_move_iterator(cigar.end()));
