@@ -10,6 +10,20 @@
 // and M for positions aligned against an N on either side. All three consume
 // reference and query alike; D and I consume one side each.
 //
+// With both checks clear the operations are taken at their word: = is a match
+// between two non-N bases, X a mismatch between two non-N bases, and M a
+// position against an N. Nothing is read back from the sequences except the
+// N counts inside M, D and I runs, which are needed to shorten the lengths.
+//
+// With either check set nothing is assumed and every aligned run is measured
+// against the sequences instead: = must be identical throughout (CHECK_EQ), X
+// must differ throughout (CHECK_EQ), and M must really cover an N on one side
+// or the other. The run is then scored by what its bases actually are, so a
+// mislabelled one is counted where it belongs rather than where its label
+// would have put it. CHECK_N is what a CIGAR with no M convention needs, since
+// there the Ns are hidden inside = and X runs and can only be found by
+// looking.
+//
 // A C++ rewrite of compute_edit_distance.py, whose per-character CIGAR walk and
 // repeated per-window scans made it slow on whole chromosomes. Output on stdout
 // is identical.
@@ -135,6 +149,9 @@ void process(const std::string &ref_fname, const std::string &qry_fname,
     int64_t ref_N = 0, qry_N = 0;
     int64_t cur_num = 0;
 
+    // Whether the aligned runs are measured against the sequences or believed.
+    const bool verify = check_N || check_eq;
+
     for (const char c : cigar) {
         if (std::isdigit(static_cast<unsigned char>(c))) {
             cur_num = cur_num * 10 + (c - '0');
@@ -165,55 +182,91 @@ void process(const std::string &ref_fname, const std::string &qry_fname,
             length += cur_num;
         } else if (c == 'M') {
             // M marks positions aligned against an N, so every base in the run
-            // has an N on at least one side; = and X only ever cover non-N
-            // positions. It consumes both sequences like = and X do.
-            if (check_N)
-                throw std::runtime_error("M operations are not supported when checking Ns");
+            // should have an N on at least one side; = and X only ever cover
+            // non-N positions. It consumes both sequences like = and X do.
+            //
+            // Believed, the run still has to be looked at once to split its N
+            // count between the two sides, the same way D and I runs are. Under
+            // either check the label is not taken on trust: a position with no
+            // N on either side belongs in an = or an X run, so it is reported
+            // and rejected, and the run is scored by what its bases actually
+            // are, leaving N positions out of the identity as before but
+            // counting any real match or mismatch hiding inside it.
             if (!same_inversion_state(ref_inv, length, qry_inv, length_q, cur_num))
                 throw std::runtime_error("M run spans a mismatched inversion state");
-            const Window w = scan(std::string_view(ref_seq).substr(length, cur_num),
-                                  std::string_view(qry_seq).substr(length_q, cur_num));
-            if (w.either_N != cur_num)
-                throw std::runtime_error("M run contains a position without an N");
-            ref_N += w.ref_N;
-            qry_N += w.qry_N;
+            const std::string_view ref_w = std::string_view(ref_seq).substr(length, cur_num);
+            const std::string_view qry_w = std::string_view(qry_seq).substr(length_q, cur_num);
+
+            if (!verify) {
+                ref_N += count_N(ref_w);
+                qry_N += count_N(qry_w);
+            } else {
+                const Window w = scan(ref_w, qry_w);
+                if (w.either_N != cur_num) {
+                    std::cerr << (length + 1) << "-" << (length + cur_num) << "\n"
+                              << (length_q + 1) << "-" << (length_q + cur_num) << "\n"
+                              << c << "\t" << "\t=" << " " << w.observed_eq
+                              << " X " << w.observed_neq << " N " << w.either_N
+                              << " total " << cur_num << "\n"
+                              << ref_w << "\n" << qry_w << "\n" << std::endl;
+                    throw std::runtime_error("M run contains a position without an N");
+                }
+                dist += w.observed_neq;
+                cur_id += w.observed_eq;
+                cur_matches += w.observed_eq + w.observed_neq;
+                ref_N += w.ref_N;
+                qry_N += w.qry_N;
+            }
             length += cur_num;
             length_q += cur_num;
         } else if (c == '=') {
             if (!same_inversion_state(ref_inv, length, qry_inv, length_q, cur_num))
                 throw std::runtime_error("= run spans a mismatched inversion state");
-            const std::string_view ref_w = std::string_view(ref_seq).substr(length, cur_num);
-            const std::string_view qry_w = std::string_view(qry_seq).substr(length_q, cur_num);
-            const Window w = scan(ref_w, qry_w);
 
-            if (w.observed_neq > 0) {
-                std::cerr << (length + 1) << "-" << (length + cur_num) << "\n"
-                          << (length_q + 1) << "-" << (length_q + cur_num) << "\n"
-                          << c << "\t" << "\t=" << " " << w.observed_eq
-                          << " X " << w.observed_neq << " N " << w.either_N
-                          << " total " << cur_num << "\n"
-                          << ref_w << "\n" << qry_w << "\n" << std::endl;
+            if (!verify) {
+                // believed to be a match between two non-N bases
+                cur_id += cur_num;
+                cur_matches += cur_num;
+            } else {
+                const std::string_view ref_w = std::string_view(ref_seq).substr(length, cur_num);
+                const std::string_view qry_w = std::string_view(qry_seq).substr(length_q, cur_num);
+                const Window w = scan(ref_w, qry_w);
+
+                if (w.observed_neq > 0) {
+                    std::cerr << (length + 1) << "-" << (length + cur_num) << "\n"
+                              << (length_q + 1) << "-" << (length_q + cur_num) << "\n"
+                              << c << "\t" << "\t=" << " " << w.observed_eq
+                              << " X " << w.observed_neq << " N " << w.either_N
+                              << " total " << cur_num << "\n"
+                              << ref_w << "\n" << qry_w << "\n" << std::endl;
+                }
+                if (check_eq && w.observed_neq != 0)
+                    throw std::runtime_error("= run contains differing bases");
+
+                cur_id += w.observed_eq;
+                cur_matches += w.observed_eq;
+                ref_N += w.ref_N;
+                qry_N += w.qry_N;
             }
-            if (check_eq && w.observed_neq != 0)
-                throw std::runtime_error("= run contains differing bases");
-
-            cur_id += w.observed_eq;
-            cur_matches += w.observed_eq;
-            ref_N += w.ref_N;
-            qry_N += w.qry_N;
             length += cur_num;
             length_q += cur_num;
         } else if (c == 'X') {
             if (!same_inversion_state(ref_inv, length, qry_inv, length_q, cur_num))
                 throw std::runtime_error("X run spans a mismatched inversion state");
-            const Window w = scan(std::string_view(ref_seq).substr(length, cur_num),
-                                  std::string_view(qry_seq).substr(length_q, cur_num));
-            if (check_eq && w.observed_eq != 0)
-                throw std::runtime_error("X run contains identical bases");
 
-            cur_matches += w.observed_neq - w.either_N;
-            ref_N += w.ref_N;
-            qry_N += w.qry_N;
+            if (!verify) {
+                // believed to be a mismatch between two non-N bases
+                cur_matches += cur_num;
+            } else {
+                const Window w = scan(std::string_view(ref_seq).substr(length, cur_num),
+                                      std::string_view(qry_seq).substr(length_q, cur_num));
+                if (check_eq && w.observed_eq != 0)
+                    throw std::runtime_error("X run contains identical bases");
+
+                cur_matches += w.observed_neq - w.either_N;
+                ref_N += w.ref_N;
+                qry_N += w.qry_N;
+            }
             length += cur_num;
             length_q += cur_num;
         }
