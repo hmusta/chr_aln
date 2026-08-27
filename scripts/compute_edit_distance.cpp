@@ -263,7 +263,7 @@ void process(const std::string &ref_fname, const std::string &qry_fname,
     const int64_t minlen_nolong = std::min(nolong_a, nolong_b);
     const int64_t maxlen_nolong = std::max(nolong_a, nolong_b);
 
-    std::printf("%s\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f-%.2f\n",
+    std::printf("%s\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f\t%.2f-%.2f\n",
                 label.c_str(),
                 (long long)full_length, (long long)length,
                 (long long)full_length_q, (long long)length_q,
@@ -272,6 +272,7 @@ void process(const std::string &ref_fname, const std::string &qry_fname,
                 100.0 * double(cur_id) / double(minlen),
                 100.0 * double(cur_matches) / double(maxlen),
                 100.0 * double(cur_matches) / double(minlen),
+                100.0 * double(cur_id) / double(cur_matches),
                 100.0 * double(cur_id) / double(maxlen_nolong),
                 100.0 * double(cur_id) / double(minlen_nolong));
 
@@ -311,7 +312,7 @@ int main(int argc, char **argv) {
                                                    totals.length_short_indels_b);
             const int64_t maxlen_nolong = std::max(totals.length_short_indels_a,
                                                    totals.length_short_indels_b);
-            std::printf("HG002\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f-%.2f\n",
+            std::printf("HG002\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f\t%.2f-%.2f\n",
                         (long long)totals.full_length_a, (long long)totals.length_a,
                         (long long)totals.full_length_b, (long long)totals.length_b,
                         (long long)totals.id,
@@ -319,6 +320,7 @@ int main(int argc, char **argv) {
                         100.0 * double(totals.id) / double(minlen),
                         100.0 * double(totals.matches) / double(maxlen),
                         100.0 * double(totals.matches) / double(minlen),
+                        100.0 * double(totals.id) / double(totals.matches),
                         100.0 * double(totals.id) / double(maxlen_nolong),
                         100.0 * double(totals.id) / double(minlen_nolong));
         }
