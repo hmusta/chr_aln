@@ -101,7 +101,9 @@ for CHR in CHR_RANGE:
     eq_nolong_min = 100*eq/maxlen_nolong
     eq_nolong_max = 100*eq/minlen_nolong
 
-    print(f"{CHR}\t{ref_assem}->{ref}\t{qry_assem}->{qry}\t{eq}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
+    eq_pc = 100*eq/match
+
+    print(f"{CHR}\t{ref_assem}->{ref}\t{qry_assem}->{qry}\t{eq}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_pc:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
 
     ref_total += ref
     qry_total += qry
@@ -120,4 +122,6 @@ maxlen_nolong = max(ref_total-ref_longindel_total,qry_total-qry_longindel_total)
 eq_nolong_min = 100*eq_total/maxlen_nolong
 eq_nolong_max = 100*eq_total/minlen_nolong
 
-print(f"{ASSEM_NAME}\t{ref_assem_len}->{ref_total}\t{qry_assem_len}->{qry_total}\t{eq_total}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
+eq_pc = 100*eq_total/match_total
+
+print(f"{ASSEM_NAME}\t{ref_assem_len}->{ref_total}\t{qry_assem_len}->{qry_total}\t{eq_total}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_pc:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
