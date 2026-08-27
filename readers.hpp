@@ -7,6 +7,7 @@
 #include <iostream>
 #include <istream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,12 +42,21 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                                        std::string &theader,
                                        std::string &query,
                                        std::string &qheader,
-                                       std::string &query_rc) {
+                                       std::string &query_rc,
+                                       SOffset min_len) {
     std::vector<Ranges> output;
     std::string line;
+    size_t line_number = 0;
 
     bool qrc = false;
     while (std::getline(fin, line)) {
+        ++line_number;
+
+        // MUMmer output ends with a newline, so the last getline yields an
+        // empty line; skip those rather than treating them as records
+        if (line.find_first_not_of(" \t\r") == std::string::npos)
+            continue;
+
         if (line[0] == '>') {
             auto rev_idx = line.rfind("Reverse");
             bool is_rev = (rev_idx != std::string::npos);
@@ -75,11 +85,6 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
             --rbegin;
             --qbegin;
 
-            assert(static_cast<size_t>(rbegin) < target.size());
-            assert(static_cast<size_t>(rbegin + len) <= target.size());
-            assert(static_cast<size_t>(qbegin) < query.size());
-            assert(static_cast<size_t>(qbegin + len) <= query.size());
-
             if (qrc) {
                 // match is [query.size() - qbegin - 1, query.size() - qbegin - 1 + len) in query_rc
                 // so [qbegin - len + 1, qbegin + 1) in query
@@ -87,21 +92,48 @@ inline std::vector<Ranges> read_mummer(std::istream &fin,
                 qbegin -= len - 1;
             }
 
-            output.emplace_back(rbegin, rbegin + len, false, qbegin, qbegin + len, qrc);
-            assert(output.back().check_equal(target, query, query_rc));
+            Offset rend = rbegin + len;
+            Offset qend = qbegin + len;
+
+            assert(static_cast<size_t>(rbegin) < target.size());
+            assert(rend <= target.size());
+            assert(static_cast<size_t>(qbegin) < query.size());
+            assert(qend <= query.size());
+
+            Ranges range(rbegin, rend, false, qbegin, qend, qrc);
+            assert(range.check_equal(target, query, query_rc));
             #ifdef NDEBUG
             std::ignore = target;
             std::ignore = query;
             std::ignore = query_rc;
             #endif
+
+            if (len < min_len) {
+                std::cerr << "WARNING: removing short match:\t"
+                          << range
+                          << std::endl;
+                return;
+            }
+
+            output.emplace_back(std::move(range));
         };
 
+        // Read into signed values so that a negative field is rejected rather
+        // than wrapping to a huge unsigned one, which parses "successfully".
         std::istringstream sin(line);
-        Offset rbegin;
-        Offset qbegin;
-        Offset len;
+        SOffset rbegin = 0;
+        SOffset qbegin = 0;
+        SOffset len = 0;
 
-        sin >> rbegin >> qbegin >> len;
+        if (!(sin >> rbegin >> qbegin >> len)) {
+            throw std::runtime_error("malformed MUM on line "
+                                     + std::to_string(line_number) + ": " + line);
+        }
+
+        if (rbegin <= 0 || qbegin <= 0 || len <= 0) {
+            throw std::runtime_error("MUM coordinates must be positive on line "
+                                     + std::to_string(line_number) + ": " + line);
+        }
 
         add_mum(rbegin, qbegin, len);
     }

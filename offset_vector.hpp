@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <stdexcept>
 
 #include <cassert>
 #include <cstddef>
@@ -15,7 +16,7 @@ class OffsetVector {
 
     void clear() {
         data_.clear();
-        offset_;
+        offset_ = 0;
     }
 
     template <typename... Args>

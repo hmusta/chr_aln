@@ -77,7 +77,7 @@ struct Cigar {
     Cigar(char c, Offset num) : data_(1, std::make_pair(c, num)) {}
     Cigar(const std::string &cigar_str) {
         Offset num = 0;
-        for (char c : cigar_str) {
+        for (unsigned char c : cigar_str) {
             if (std::isdigit(c)) {
                 num = num * 10 + c - '0';
             } else {
@@ -124,13 +124,13 @@ struct Cigar {
 
     template <typename It>
     void insert(iterator it, It begin, It end, bool merge = false) {
-        if (merge && begin != end) {
-            if (it != data_.end() && (end - 1)->first == it->first) {
+        if (merge) {
+            if (it != data_.end() && begin != end && (end - 1)->first == it->first) {
                 it->second += (end - 1)->second;
                 --end;
             }
 
-            if (it != data_.begin() && begin->first == (it - 1)->first) {
+            if (it != data_.begin() && begin != end && begin->first == (it - 1)->first) {
                 (it - 1)->second += begin->second;
                 ++begin;
             }

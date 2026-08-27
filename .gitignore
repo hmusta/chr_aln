@@ -68,5 +68,10 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# mummer directory
-mummer/
+# scratch directory
+scratch/
+
+# pycache
+scripts/__pycache__/
+scripts/compute_edit_distance
+scripts/syri_to_cigar

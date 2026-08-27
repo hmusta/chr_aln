@@ -126,7 +126,7 @@ inline bool wf_extend(
         U t_end,
         Wavefront& wf,
         const MismatchGetter& get_mismatch_it,
-        const WFElemCallback& callback = [](Offset, Offset, Offset, Offset, Offset, Offset) {},
+        const WFElemCallback& callback = [](Offset, Offset, Offset, Offset, Offset, Offset, Offset, Offset) {},
         bool halt_if_found = true,
         bool callback_after_extend = false) {
     bool found = false;
@@ -176,7 +176,7 @@ inline bool wf_extend(
 
 static const Wavefront dummy_wavefront;
 
-using DiagSkipper = std::function<bool(Diag, UDiag, UDiag)>;
+using DiagSkipper = std::function<bool(Offset, Offset, UDiag)>;
 
 template <class T, class U>
 inline size_t wf_next(T q_begin,
@@ -716,6 +716,7 @@ run_alignment_gaps(wfa::WFAligner& aligner,
     std::vector<std::pair<SOffset, SOffset>> query_n_coords = get_ns(query);
     std::vector<std::pair<SOffset, SOffset>> target_n_coords = get_ns(target);
 
+    // TODO: handle case with multiple N blocks later
     if (query_n_coords.size() != 1 && target_n_coords.size() != 1) {
         std::cout << "Defaulting to WFA2-lib\n";
         SeqPair view_pair(query, target);
@@ -792,9 +793,9 @@ run_alignment_gaps(wfa::WFAligner& aligner,
 
                 if (qi + query_left >= query_gap_end) {
                     taken_gaps_q = query_gap_length;
-                } else if (qi <= query_gap_begin && ti + query_left > query_gap_begin) {
-                    taken_gaps_q += ti + query_left - query_gap_begin;
-                } else if (qi > query_gap_begin && ti + query_left <= query_gap_end) {
+                } else if (qi <= query_gap_begin && qi + query_left > query_gap_begin) {
+                    taken_gaps_q += qi + query_left - query_gap_begin;
+                } else if (qi > query_gap_begin && qi + query_left <= query_gap_end) {
                     taken_gaps_q += query_left;
                 }
 
@@ -813,7 +814,7 @@ run_alignment_gaps(wfa::WFAligner& aligner,
         assert(qi == first_aln_begin + taken_gaps);
         #ifndef NDEBUG
         for (int64_t i = 0; i < taken_gaps; ++i) {
-            assert(query[first_aln_begin + i] == 'N' || target[first_aln_begin + 1] == 'N');
+            assert(query[first_aln_begin + i] == 'N' || target[first_aln_begin + i] == 'N');
         }
         #endif
         std::cout << "Then gap of length " << taken_gaps << "\n";

@@ -9,7 +9,13 @@ void print_chain(std::ostream &out,
                  std::string_view query,
                  const std::vector<Ranges> &chain,
                  Score chain_score) {
-    Diag target_diag = static_cast<Diag>(target.size()) - static_cast<Diag>(query.size());
+    out << "Chain score:\t" << chain_score << " with ";
+    if (chain.empty()) {
+        out << "0 anchors" << std::endl;
+        return;
+    }
+
+    Diag target_diag = static_cast<ssize_t>(target.size()) - static_cast<ssize_t>(query.size());
     size_t begin_i = 0;
     auto front_it = chain.begin();
     if (front_it->size() == 0) {
@@ -25,8 +31,7 @@ void print_chain(std::ostream &out,
         assert(back_it != chain.rend());
     }
 
-    out << "Chain score:\t" << chain_score << " with "
-        << (back_it.base() - front_it) << " anchors" << "\n"
+    out << (back_it.base() - front_it) << " anchors" << "\n"
         << "t: " << front_it->rbegin + 1 << "-" << back_it->rend
         << " / " << target.size() << "\t"
         << "q: " << front_it->qbegin + 1 << "-" << back_it->qend
@@ -492,26 +497,27 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
     size_t i = dp_table.size() - 1;
     Score best_score = dp_table[i].chain_score;
 
-    if (best_score == ScoreModel::ninf_s)
-        return {};
-
-    assert(dp_table[i].last_op == LastOp::MATCH);
-
     std::vector<Ranges> ret_val;
-    while (i < dp_table.size()) {
-        ret_val.emplace_back(*dp_table[i].it);
-        assert(dp_table[i].last_op != LastOp::CLIPPED || dp_table[i].last == ChainTableElem::npos);
+    assert(best_score >= ScoreModel::ninf_s);
 
-        if (dp_table[i].last_op == LastOp::INVERTED) {
-            i = dp_table[i].last_inv;
-            assert(i < dp_table.size());
-            while (dp_table[i].last_op_inv == LastOp::INVERTED) {
-                ret_val.emplace_back(*dp_table[i].it);
+    if (best_score > ScoreModel::ninf_s) {
+        assert(dp_table[i].last_op == LastOp::MATCH);
+
+        while (i < dp_table.size()) {
+            ret_val.emplace_back(*dp_table[i].it);
+            assert(dp_table[i].last_op != LastOp::CLIPPED || dp_table[i].last == ChainTableElem::npos);
+
+            if (dp_table[i].last_op == LastOp::INVERTED) {
                 i = dp_table[i].last_inv;
                 assert(i < dp_table.size());
+                while (dp_table[i].last_op_inv == LastOp::INVERTED) {
+                    ret_val.emplace_back(*dp_table[i].it);
+                    i = dp_table[i].last_inv;
+                    assert(i < dp_table.size());
+                }
+            } else {
+                i = dp_table[i].last;
             }
-        } else {
-            i = dp_table[i].last;
         }
     }
 
@@ -528,26 +534,14 @@ std::pair<std::vector<Ranges>, Score> chain_ranges(std::string_view target,
     return std::make_pair(std::move(ret_val), best_score);
 }
 
-std::vector<Ranges> rc_ranges(const std::vector<Ranges>& mummer_ranges, SOffset query_size) {
-    std::vector<Ranges> rc_mummer_ranges;
-    rc_mummer_ranges.reserve(mummer_ranges.size());
-    for (const auto& [rbegin, rend, rrc, qbegin, qend, qrc, left_trim, right_trim] :
-         mummer_ranges) {
-        assert(query_size >= qbegin);
-        assert(query_size >= qend);
-        rc_mummer_ranges.emplace_back(rbegin, rend, rrc, query_size - qend,
-                                      query_size - qbegin, !qrc, left_trim, right_trim);
-    }
-
-    return rc_mummer_ranges;
-}
-
 std::tuple<bool, std::string_view, std::string_view, SOffset, SOffset, SOffset, SOffset>
 extract_gap_seqs_continue(std::string_view target,
                           std::string_view query,
                           std::string_view query_rc,
                           const std::vector<Ranges>& best_chain,
                           size_t i) {
+    assert(!best_chain.empty());
+    assert(!best_chain[0].qorientation);
     assert(i);
     SOffset qi = 0;
     SOffset qi_b = 0;
@@ -1045,7 +1039,7 @@ std::pair<Diag, Diag> compute_diag(const std::string& target,
     }
 
     Diag target_abs_diag
-            = static_cast<Diag>(target.size()) - static_cast<Diag>(query.size());
+            = static_cast<ssize_t>(target.size()) - static_cast<ssize_t>(query.size());
     if (target_abs_diag < 0) {
         target_abs_diag *= -1;
         max_diag *= -1;

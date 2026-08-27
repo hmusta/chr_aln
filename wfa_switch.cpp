@@ -337,7 +337,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
         bp_new.q2_left_gap = q2_left_gap;
         bp_new.q2_right_gap = q2_right_gap;
 
-        if (bp_new.all_on_right(t1_max, q1_max, t2_max, t2_max)) {
+        if (bp_new.all_on_right(t1_max, q1_max, t2_max, q2_max)) {
             // t1 will align to nothing, t2 will align to the concatenation of query_2 and query_rc_2
             if (t2_max == 0) {
                 // penalty already covers query_rc_2, now we need to cover query_2
@@ -359,7 +359,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
 
             if (update_p >= breakpoints.min_p)
                 return;
-        } else if (bp_new.all_on_left(t1_max, q1_max, t2_max, t2_max)) {
+        } else if (bp_new.all_on_left(t1_max, q1_max, t2_max, q2_max)) {
             // t1 will align to the concatenation of query_1 and query_rc_1, t2 will align to nothing
             if (t1_max == 0) {
                 // penalty already covers query_1, now we need to cover query_rc_1
@@ -707,7 +707,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
 
             auto [it_b, it_e] = wfa_it_1_fwd.get_min(diag_1_f, q1, q1 + 1);
             if (it_b == it_e)
-                break;
+                continue;
 
             // we now have q1 and t1
             min_update_p_2 = it_b->penalty + kt_b->penalty;
@@ -806,7 +806,7 @@ void update_breakpoints(wfa::WFAligner& aligner,
             }
 
             min_update_p_3 += min_update_p_2;
-            if (min_update_p_2 >= breakpoints.min_p)
+            if (min_update_p_3 >= breakpoints.min_p)
                 continue;
 
             auto [lt_b, lt_e] = wfa_it_2_bwd.get_min(diag_2_b, q2, q2 + 1);

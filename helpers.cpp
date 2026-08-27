@@ -9,9 +9,9 @@ const std::array<std::string, 4> ScoreModel::model_type_str {
         "Edit distance", "Gap linear", "Gap affine", "2-piece gap affine"
     };
 
-static_assert((1llu << (sizeof(char) * 8)) == 256);
-static std::array<char, 256> RC_MAP = []() {
-    std::array<char, 256> rc_map;
+static_assert((1llu << (sizeof(unsigned char) * 8)) == 256);
+static std::array<unsigned char, 256> RC_MAP = []() {
+    std::array<unsigned char, 256> rc_map;
 
     // by default, the identity map
     std::iota(rc_map.begin(), rc_map.end(), 0);
@@ -66,19 +66,33 @@ static std::array<char, 256> RC_MAP = []() {
 }();
 
 std::string reverse_complement(std::string_view fw) {
-    assert(std::all_of(fw.begin(), fw.end(), [](char c) { return c == std::toupper(c); }));
+    assert(std::all_of(fw.begin(), fw.end(), [](unsigned char c) { return c == std::toupper(c); }));
 
     std::string rc;
     rc.reserve(fw.size());
     std::transform(fw.rbegin(), fw.rend(), std::back_inserter(rc),
-                   [](char c) { return RC_MAP[c]; });
+                   [](unsigned char c) { return RC_MAP[c]; });
     return rc;
 }
 
 bool is_reverse_complement(std::string_view fw, std::string_view rc) {
-    return std::equal(fw.rbegin(), fw.rend(), rc.begin(), rc.end(), [](char f, char r) {
+    return std::equal(fw.rbegin(), fw.rend(), rc.begin(), rc.end(), [](unsigned char f, unsigned char r) {
         assert(f == std::toupper(f));
         assert(r == std::toupper(r));
         return f == RC_MAP[r];
     });
+}
+
+std::vector<Ranges> rc_ranges(const std::vector<Ranges>& mummer_ranges,
+                              SOffset query_size) {
+    std::vector<Ranges> rc_mummer_ranges;
+    rc_mummer_ranges.reserve(mummer_ranges.size());
+    for (const auto& [rbegin, rend, rrc, qbegin, qend, qrc, left_trim, right_trim] : mummer_ranges) {
+        assert(query_size >= qbegin);
+        assert(query_size >= qend);
+        rc_mummer_ranges.emplace_back(rbegin, rend, rrc, query_size - qend,
+                                      query_size - qbegin, !qrc, left_trim, right_trim);
+    }
+
+    return rc_mummer_ranges;
 }
