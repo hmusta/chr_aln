@@ -255,13 +255,25 @@ void process(const std::string &ref_fname, const std::string &qry_fname,
 
     const int64_t minlen = std::min(length, length_q);
     const int64_t maxlen = std::max(length, length_q);
-    std::printf("%s\t%lld->%lld\t%lld->%lld\t%lld\t%.2f\t%.2f\n",
+
+    // The same lengths with the long indels taken back out, so the identity
+    // can also be reported against what the two sequences actually share.
+    const int64_t nolong_a = cur_matches + short_indels_a;
+    const int64_t nolong_b = cur_matches + short_indels_b;
+    const int64_t minlen_nolong = std::min(nolong_a, nolong_b);
+    const int64_t maxlen_nolong = std::max(nolong_a, nolong_b);
+
+    std::printf("%s\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f-%.2f\n",
                 label.c_str(),
                 (long long)full_length, (long long)length,
                 (long long)full_length_q, (long long)length_q,
                 (long long)cur_id,
                 100.0 * double(cur_id) / double(maxlen),
-                100.0 * double(cur_id) / double(minlen));
+                100.0 * double(cur_id) / double(minlen),
+                100.0 * double(cur_matches) / double(maxlen),
+                100.0 * double(cur_matches) / double(minlen),
+                100.0 * double(cur_id) / double(maxlen_nolong),
+                100.0 * double(cur_id) / double(minlen_nolong));
 
     totals->full_length_a += full_length;
     totals->full_length_b += full_length_q;
@@ -295,12 +307,20 @@ int main(int argc, char **argv) {
         if (totals.nchrom > 1) {
             const int64_t minlen = std::min(totals.length_a, totals.length_b);
             const int64_t maxlen = std::max(totals.length_a, totals.length_b);
-            std::printf("HG002\t%lld->%lld\t%lld->%lld\t%lld\t%.2f\t%.2f\n",
+            const int64_t minlen_nolong = std::min(totals.length_short_indels_a,
+                                                   totals.length_short_indels_b);
+            const int64_t maxlen_nolong = std::max(totals.length_short_indels_a,
+                                                   totals.length_short_indels_b);
+            std::printf("HG002\t%lld->%lld\t%lld->%lld\t%lld\t%.2f-%.2f\t%.2f-%.2f\t%.2f-%.2f\n",
                         (long long)totals.full_length_a, (long long)totals.length_a,
                         (long long)totals.full_length_b, (long long)totals.length_b,
                         (long long)totals.id,
                         100.0 * double(totals.id) / double(maxlen),
-                        100.0 * double(totals.id) / double(minlen));
+                        100.0 * double(totals.id) / double(minlen),
+                        100.0 * double(totals.matches) / double(maxlen),
+                        100.0 * double(totals.matches) / double(minlen),
+                        100.0 * double(totals.id) / double(maxlen_nolong),
+                        100.0 * double(totals.id) / double(minlen_nolong));
         }
     } catch (const std::exception &e) {
         std::cerr << "error: " << e.what() << std::endl;
