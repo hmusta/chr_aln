@@ -7,8 +7,7 @@ ASSEM_NAME="HG002"
 REF_SUFFIX="_PATERNAL"
 QRY_SUFFIX="_MATERNAL"
 
-#CHR_RANGE=range(1,23)
-CHR_RANGE=range(22,23)
+CHR_RANGE=range(1,23)
 CHECK_N=False
 
 def tail(path, n=2, chunk=4096):
@@ -51,6 +50,8 @@ ref_assem_len = 0
 qry_assem_len = 0
 ref_total = 0
 qry_total = 0
+ref_longindel_total = 0
+qry_longindel_total = 0
 eq_total = 0
 match_total = 0
 for CHR in CHR_RANGE:
@@ -59,7 +60,11 @@ for CHR in CHR_RANGE:
     minlen_assem = min(ref_assem, qry_assem)
 
     OUTFILE=f"{OUTDIR}/chr{CHR}_checker.out"
-    eq, match, nref, nqry, nlongindelref, nlongindelqry = [int(a) for a in tail(OUTFILE, 2)[0].rstrip().split()]
+    try:
+        eq, match, nref, nqry, nlongindelref, nlongindelqry = [int(a) for a in tail(OUTFILE, 2)[0].rstrip().split()]
+    except ValueError:
+        print(f"Skipping chr{CHR} since it's incomplete",file=sys.stderr)
+        continue
     if CHECK_N and (nref != ref_n or nqry != qry_n):
         print(f"chr{CHR}:\t{nref} != {ref_n} or {nqry} != {qry_n}")
         print(eq,match,nref,nqry,nlongindelref,nlongindelqry)
@@ -81,15 +86,38 @@ for CHR in CHR_RANGE:
     assert(nlongindelref <= ref)
     assert(nlongindelqry <= qry)
 
+    ref_longindel_total += nlongindelref
+    qry_longindel_total += nlongindelqry
+
     maxlen = max(ref, qry)
 
-    print(f"{CHR}\t{ref_assem}->{ref}\t{qry_assem}->{qry}\t{eq}\t{100*eq/maxlen:.2f}\t{100*eq/minlen:.2f}")
+    eq_pc_min = 100*eq/maxlen
+    eq_pc_max = 100*eq/minlen
+    match_pc_min = 100*match/maxlen
+    match_pc_max = 100*match/minlen
+
+    minlen_nolong = min(ref-nlongindelref,qry-nlongindelqry)
+    maxlen_nolong = max(ref-nlongindelref,qry-nlongindelqry)
+    eq_nolong_min = 100*eq/maxlen_nolong
+    eq_nolong_max = 100*eq/minlen_nolong
+
+    print(f"{CHR}\t{ref_assem}->{ref}\t{qry_assem}->{qry}\t{eq}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
 
     ref_total += ref
     qry_total += qry
     eq_total += eq
     match_total += match
 
-min_total = min(ref_total, qry_total)
-max_total = max(ref_total, qry_total)
-print(f"{ASSEM_NAME}\t{ref_assem_len}->{ref_total}\t{qry_assem_len}->{qry_total}\t{eq_total}\t{100*eq_total/max_total:.2f}\t{100*eq_total/min_total:.2f}")
+minlen = min(ref_total, qry_total)
+maxlen = max(ref_total, qry_total)
+eq_pc_min = 100*eq_total/maxlen
+eq_pc_max = 100*eq_total/minlen
+match_pc_min = 100*match_total/maxlen
+match_pc_max = 100*match_total/minlen
+
+minlen_nolong = min(ref_total-ref_longindel_total,qry_total-qry_longindel_total)
+maxlen_nolong = max(ref_total-ref_longindel_total,qry_total-qry_longindel_total)
+eq_nolong_min = 100*eq_total/maxlen_nolong
+eq_nolong_max = 100*eq_total/minlen_nolong
+
+print(f"{ASSEM_NAME}\t{ref_assem_len}->{ref_total}\t{qry_assem_len}->{qry_total}\t{eq_total}\t{eq_pc_min:.2f}-{eq_pc_max:.2f}\t{match_pc_min:.2f}-{match_pc_max:.2f}\t{eq_nolong_min:.2f}-{eq_nolong_max:.2f}")
